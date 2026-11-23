@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Captions · __MEETING_ID__</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --muted:#777; --line:#e5e5e5; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#888; --line:#2a2a2a; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui, sans-serif; }
+  header { display:flex; gap:12px; align-items:baseline; padding:12px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  #status { color:var(--muted); font-size:13px; }
+  #roster { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+  .pill { border-radius:999px; padding:1px 10px; font-size:13px; color:#fff; }
+  main { max-width:900px; margin:0 auto; padding:16px 20px 120px; }
+  .seg { display:grid; grid-template-columns:120px 1fr; gap:12px; padding:6px 0; border-bottom:1px solid var(--line); }
+  .seg .who { font-weight:600; }
+  .seg .t { color:var(--muted); font-size:12px; }
+  .partial { color:var(--muted); font-style:italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Meeting <code>__MEETING_ID__</code></h1>
+  <span id="status">connecting…</span>
+  <div id="roster"></div>
+</header>
+<main id="log"></main>
+<script>
+const MEETING = "__MEETING_ID__";
+const log = document.getElementById("log"), status = document.getElementById("status"),
+      roster = document.getElementById("roster");
+const partials = new Map(); // speaker -> element
+
+function hue(name) { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+function color(name) { return `hsl(${hue(name)} 60% 42%)`; }
+function pill(name) { const s = document.createElement("span"); s.className = "pill"; s.textContent = name; s.style.background = color(name); return s; }
+function fmt(ts) { return ts ? new Date(ts * 1000).toLocaleTimeString() : ""; }
+
+function render(c) {
+  let el = partials.get(c.speaker);
+  if (!el) {
+    el = document.createElement("div"); el.className = "seg";
+    el.innerHTML = `<div><div class="who"></div><div class="t"></div></div><div class="txt"></div>`;
+    el.querySelector(".who").textContent = c.speaker; el.querySelector(".who").style.color = color(c.speaker);
+    log.appendChild(el);
+  }
+  el.querySelector(".t").textContent = fmt(c.ts);
+  const txt = el.querySelector(".txt"); txt.textContent = c.text; txt.className = "txt" + (c.completed ? "" : " partial");
+  if (c.completed) partials.delete(c.speaker); else partials.set(c.speaker, el);
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+fetch("/api/meetings/__MEETING_ID__/segments").then(r => r.json())
+  .then(rows => rows.forEach(r => render({ ...r, completed: true }))).catch(() => {});
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(proto + "://" + location.host + "/listen/__MEETING_ID__");
+  ws.onopen = () => status.textContent = "live";
+  ws.onclose = () => { status.textContent = "reconnecting…"; setTimeout(connect, 2000); };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "roster") { roster.replaceChildren(...m.speakers.map(pill)); }
+    else if (m.type === "caption") render(m);
+  };
+}
+connect();
+</script>
+</body>
+</html>
