@@ -1,0 +1,4 @@
+# Python 3.11 or 3.12 recommended for prebuilt wheels
+sounddevice>=0.5
+websockets>=13
+numpy>=1.26

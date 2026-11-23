@@ -1,0 +1,8 @@
+{
+  "user_name": "Muhammad",
+  "server_ip": "192.168.10.17",
+  "hub_port": 8085,
+  "meeting_id": "daily",
+  "language": "auto",
+  "input_device": null
+}
