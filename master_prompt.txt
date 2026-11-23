@@ -1,0 +1,73 @@
+# MISSION: Build Multi-User Office Meeting Transcription, Live Captioning & Odoo Consolidation System
+
+You are the **Lead Systems Architect & Orchestrator**. Spawn and coordinate **4 specialized sub-agents** in parallel (and run a final integration/QA gate) to build a complete, production-ready, self-hosted LAN meeting intelligence suite.
+
+## TARGET ENVIRONMENT & HARDWARE CONSTRAINTS
+- **Central GPU Host (`192.168.10.17`):** Windows 11 / WSL2 Docker host with NVIDIA RTX 4060 Ti (16GB VRAM) and 64GB RAM.
+- **Office Environment (Scenario B):** Multiple colleagues sit at separate workstations using different browsers (Chrome, Firefox, Edge, Brave) and desktop call apps, while sometimes also speaking in the same physical room.
+- **Core Stack:**
+  1. **Collabora WhisperLive (`ghcr.io/collabora/whisperlive-gpu:latest`)** running in **Single-Model Mode** (`--faster_whisper_custom_model_path large-v3`) so VRAM (~3 GB) is shared across up to 10 concurrent workstation streams.
+  2. **Central FastAPI Hub (`hub.py` on port `8085`)** for multi-speaker WebSocket caption routing, office acoustic cross-talk/bleed suppression, transcript persistence, **Ollama** (`qwen3.5:9b` / `gemma4`) consolidation, and **Odoo XML-RPC** publishing.
+  3. **Browser-Agnostic Workstation Desktop App (`office_agent.py` -> PyInstaller `.exe`)** with OS-level audio capture (Mic + optional Windows WASAPI Loopback), system tray controls, and a frameless Always-on-Top live caption overlay.
+
+---
+
+## MULTI-AGENT EXECUTION PLAN (SPAWN THESE 4 AGENTS)
+
+### AGENT 1: Infrastructure & Docker Compose Engineer (`infra-agent`)
+**Deliverables:** `docker-compose.yml`, `.env.example`, `server/Dockerfile`, `server/requirements.txt`
+**Tasks:**
+1. Create a production `docker-compose.yml` running:
+   - `whisperlive`: `ghcr.io/collabora/whisperlive-gpu:latest` on port `9090` using `--backend faster_whisper --faster_whisper_custom_model_path large-v3 --max_clients 10 --max_connection_time 14400 --omp_num_threads 4 --enable_rest` with NVIDIA GPU reservation and persistent HuggingFace cache volume.
+   - `ollama`: `ollama/ollama:latest` on port `11434` with NVIDIA GPU reservation and persistent volume.
+   - `caption-hub`: FastAPI + Uvicorn service on port `8085` connected to `whisperlive` and `ollama` over an internal Docker bridge network, with `./data/meetings` mounted for persistent JSON/Markdown transcripts.
+2. Provide a clean `.env.example` containing `SERVER_IP=192.168.10.17`, `OLLAMA_MODEL=qwen3.5:9b`, `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY`, and `ODOO_PROJECT_ID`.
+
+### AGENT 2: Central Hub, Cross-Talk Deduplicator & Odoo Integrator (`backend-agent`)
+**Deliverables:** `server/hub.py`, `server/deduplicator.py`, `server/ollama_synthesizer.py`, `server/odoo_client.py`
+**Tasks:**
+1. **`hub.py` (FastAPI + WebSockets):**
+   - Endpoint `WS /ws/{meeting_id}/{speaker_name}`: Accepts live JSON caption frames (`{"speaker": str, "text": str, "completed": bool, "rms": float, "timestamp": float}`), routes them through `deduplicator.py`, stores finalized segments (`completed: true`) in an append-only JSONL log per `meeting_id`, and broadcasts clean live caption updates to all connected clients in that `meeting_id` room.
+   - Endpoint `GET /captions/{meeting_id}`: Serves a clean, minimalist dark/light web fallback viewer for live captions and meeting history.
+   - Endpoint `POST /api/meetings/{meeting_id}/finalize`: Triggers `ollama_synthesizer.py` and optionally pushes to `odoo_client.py`, returning the consolidated Markdown and Odoo record ID.
+2. **`deduplicator.py` (Same-Room Cross-Talk Suppression):**
+   - When two colleagues sit in the same room on separate PCs, Speaker A's voice can bleed into Speaker B's mic.
+   - Implement a sliding-window (`±350 ms`) cross-talk filter: if two different speakers emit segments with high normalized token/Levenshtein similarity (`>= 0.78`) within `350 ms`, suppress the lower-RMS (quieter/bleed) stream so the live caption overlay and final transcript never duplicate or misattribute the sentence.
+3. **`ollama_synthesizer.py`:**
+   - Calls local Ollama (`/api/chat`, `temperature: 0.2`) with a structured executive prompt that:
+     - Maps every distinct speaker's arguments, concerns, and proposals without dropping minority viewpoints.
+     - Merges overlapping points across participants into unified topic threads with explicit `[Speaker Name]` attributions.
+     - Outputs clean Markdown sections: `## Executive Summary`, `## Consolidated Discussion by Topic`, `## Key Decisions`, and `## Action Items` (table with Owner, Task, Deadline).
+4. **`odoo_client.py`:**
+   - Connects to on-premise Odoo via standard library `xmlrpc.client` (`/xmlrpc/2/common` and `/xmlrpc/2/object`).
+   - Creates a `project.task` (or posts a `mail.message` note) containing the consolidated HTML-formatted meeting minutes and extracted action items, gracefully handling offline/unconfigured Odoo credentials by saving locally first.
+
+### AGENT 3: Workstation Desktop App & Live Caption UI Engineer (`desktop-agent`)
+**Deliverables:** `client/office_agent.py`, `client/audio_capture.py`, `client/overlay_ui.py`, `client/config.example.json`, `client/requirements.txt`, `client/build_exe.bat`
+**Tasks:**
+1. **`audio_capture.py` (Browser-Agnostic Dual-Stream Audio):**
+   - Captures local microphone audio at 16 kHz mono float32 (`sounddevice` / `PyAudioWPatch`) and computes real-time RMS energy per chunk.
+   - Optional toggle `capture_system_audio: true` using Windows WASAPI loopback (`PyAudioWPatch`) mixed or tagged as `Remote-Call` so remote participants from any browser/app are also captured if a host enables it.
+   - Includes local energy/VAD gating and automatic exponential-backoff WebSocket reconnection if the LAN blips.
+2. **`overlay_ui.py` (Always-on-Top Live Caption Strip):**
+   - Frameless, draggable, semi-transparent (`alpha=0.90`) bottom-of-screen caption bar (`tkinter` / `customtkinter`) with dark/light theme support.
+   - Displays distinct color-coded speaker pills (`[Muhammad]`, `[Gabriele]`, etc.), renders partial (`completed: false`) speech smoothly in muted text, and locks finalized sentences (`completed: true`) in crisp text.
+   - Includes compact inline controls: **Mute Mic**, **Hide/Show Bar**, and **Finalize & Push to Odoo**.
+3. **`office_agent.py` & `build_exe.bat`:**
+   - First-run lightweight setup dialog if `config.json` is missing (prompts for `user_name`, `server_ip`, `meeting_id`, and `language` default `auto`).
+   - System tray icon (`pystray`) with live status indicator (Connected / Muted / Reconnecting), Meeting ID switcher, and Quit handler.
+   - `build_exe.bat` using PyInstaller (`--onefile --windowed --name OfficeMeetingAgent`) for zero-dependency distribution across office Windows PCs.
+
+### AGENT 4: Testing, Simulation & Documentation Engineer (`qa-agent`)
+**Deliverables:** `tests/test_deduplicator.py`, `tests/simulate_multi_user_meeting.py`, `README.md`
+**Tasks:**
+1. Write unit tests (`pytest`) verifying `deduplicator.py` accurately drops simulated room bleed (lower RMS duplicate within 350 ms) while preserving genuine simultaneous back-and-forth dialogue between two speakers.
+2. Write an end-to-end simulation script (`tests/simulate_multi_user_meeting.py`) that spins up 3 simulated office clients (`Muhammad`, `Gabriele`, `Ginadomenico`) sending realistic multi-speaker dialogue + simulated cross-talk to `hub.py`, verifies live WebSocket broadcast delivery, triggers `/finalize`, and validates the consolidated Markdown output.
+3. Write a concise, step-by-step `README.md` covering server startup (`docker compose up -d`), pulling the Ollama model, building `OfficeMeetingAgent.exe`, and onboarding colleagues.
+
+---
+
+## ORCHESTRATOR RULES & QUALITY GATES
+1. **Strict Directory Layout:** Keep everything cleanly organized under `server/`, `client/`, `tests/`, `docker-compose.yml`, `.env.example`, and `README.md`.
+2. **Protocol Verification:** Ensure `audio_capture.py` strictly adheres to Collabora WhisperLive's exact WebSocket handshake (`uid`, `language`, `task`, `model`, `use_vad`) and raw `float32` 16 kHz PCM binary frame format.
+3. **Final Verification Gate:** After all 4 sub-agents finish, run `pytest` and a syntax/import check across all Python modules, fix any discrepancies between client and server JSON schemas, and present a concise summary of files created and launch commands.

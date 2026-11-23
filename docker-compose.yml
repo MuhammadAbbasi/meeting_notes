@@ -1,0 +1,69 @@
+services:
+  whisperlive:
+    image: ghcr.io/collabora/whisperlive-gpu:latest
+    command: >
+      python run_server.py --port 9090 --backend faster_whisper
+      --faster_whisper_custom_model_path ${WHISPER_MODEL:-deepdml/faster-whisper-large-v3-turbo-ct2}
+      --batch_inference --max_clients 10 --max_connection_time 14400
+      --omp_num_threads 4 --enable_rest --rest_port 8000
+    ports:
+      - "9090:9090"
+      - "9000:8000"
+    volumes:
+      - hf-cache:/root/.cache
+    networks: [meetnet]
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    networks: [meetnet]
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  caption-hub:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "8085:8085"
+    environment:
+      TRANSCRIBER: whisperlive
+      WHISPERLIVE_URL: ws://whisperlive:9090
+      WHISPER_MODEL: ${WHISPER_MODEL:-deepdml/faster-whisper-large-v3-turbo-ct2}
+      DATA_DIR: /app/data/meetings
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
+      ODOO_URL: ${ODOO_URL:-}
+      ODOO_DB: ${ODOO_DB:-}
+      ODOO_USER: ${ODOO_USER:-}
+      ODOO_API_KEY: ${ODOO_API_KEY:-}
+      ODOO_PROJECT_ID: ${ODOO_PROJECT_ID:-}
+    volumes:
+      - ./data/meetings:/app/data/meetings
+    depends_on: [whisperlive, ollama]
+    networks: [meetnet]
+    restart: unless-stopped
+
+volumes:
+  hf-cache:
+  ollama:
+
+networks:
+  meetnet:
