@@ -21,22 +21,6 @@ services:
               count: all
               capabilities: [gpu]
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama:/root/.ollama
-    networks: [meetnet]
-    restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
   caption-hub:
     build:
       context: .
@@ -48,7 +32,8 @@ services:
       WHISPERLIVE_URL: ws://whisperlive:9090
       WHISPER_MODEL: ${WHISPER_MODEL:-deepdml/faster-whisper-large-v3-turbo-ct2}
       DATA_DIR: /app/data/meetings
-      OLLAMA_URL: http://ollama:11434
+      # Ollama already runs on the Docker host; host.docker.internal resolves to it on Docker Desktop and via extra_hosts on Linux
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
       ODOO_URL: ${ODOO_URL:-}
       ODOO_DB: ${ODOO_DB:-}
@@ -57,13 +42,14 @@ services:
       ODOO_PROJECT_ID: ${ODOO_PROJECT_ID:-}
     volumes:
       - ./data/meetings:/app/data/meetings
-    depends_on: [whisperlive, ollama]
+    depends_on: [whisperlive]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks: [meetnet]
     restart: unless-stopped
 
 volumes:
   hf-cache:
-  ollama:
 
 networks:
   meetnet:

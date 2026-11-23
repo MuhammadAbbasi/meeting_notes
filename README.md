@@ -32,13 +32,20 @@ an NVIDIA GPU with ≥ 8 GB VRAM (16 GB recommended for 10 concurrent streams + 
 git clone https://github.com/MuhammadAbbasi/meeting_notes.git
 cd meeting_notes
 copy .env.example .env        # edit: WHISPER_MODEL, OLLAMA_MODEL, ODOO_* (Odoo is optional)
+ollama list                   # OLLAMA_MODEL must be one of these; else: ollama pull qwen3.5:9b
 docker compose up -d --build
-docker compose logs -f whisperlive   # first start downloads the model (minutes)
-docker compose exec ollama ollama pull qwen3.5:9b   # or whatever OLLAMA_MODEL you set
+docker compose logs -f whisperlive   # first start downloads the Whisper model (minutes)
 curl http://localhost:8085/health    # {"status":"ok","transcriber":"whisperlive","rooms":0}
 ```
 
-Open firewall ports **8085** (hub) on the host; 9090/11434 only need to be reachable inside Docker.
+Compose starts only **WhisperLive** and the **hub**. Ollama is *not* started: the hub talks to the
+Ollama already running on the host (`OLLAMA_URL=http://host.docker.internal:11434`), so the
+models you already pulled are reused and the GPU is not loaded twice. If Odoo also runs on the
+same host, use `ODOO_URL=http://host.docker.internal:8069`, never `localhost` (that would be the
+hub container itself).
+
+Open firewall port **8085** (hub) on the host; 9090 only needs to be reachable inside Docker.
+Check `http://<hub-ip>:8085/dashboard`: all three cards should be green.
 
 ### Dashboard
 
@@ -68,7 +75,7 @@ Hub environment variables (all optional):
 | `TRANSCRIBER` | `whisperlive` | `mock` for development without a GPU |
 | `WHISPERLIVE_URL` | `ws://whisperlive:9090` | upstream transcriber |
 | `DEDUP_HOLD_S` / `DEDUP_WINDOW_S` / `DEDUP_SIMILARITY` | `2.5` / `2.0` / `0.78` | cross-talk suppression, see CONTRACTS §1.5 |
-| `OLLAMA_URL` / `OLLAMA_MODEL` | `http://ollama:11434` / `qwen3.5:9b` | minutes LLM |
+| `OLLAMA_URL` / `OLLAMA_MODEL` | `http://host.docker.internal:11434` / `qwen3.5:9b` | minutes LLM (the host's own Ollama) |
 | `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_API_KEY`, `ODOO_PROJECT_ID` | empty | leave empty to only save minutes locally |
 | `SPEAKER_ALIASES` | empty | JSON, e.g. `{"Ginadomenico":"Gian Domenico Bianchi"}` to map caption names to Odoo users |
 | `DATA_DIR` | `/app/data/meetings` | transcripts and minutes (mounted to `./data/meetings`) |
