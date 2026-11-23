@@ -1,4 +1,4 @@
-"""Always-on-top caption strip (tkinter). Thread-safe `push(frame)` from the hub link."""
+"""Always-on-top caption strip (tkinter), bottom-right, half transparent. Thread-safe `push`/`call`."""
 from __future__ import annotations
 
 import queue
@@ -7,51 +7,51 @@ from typing import Callable
 
 PALETTE = ["#4fc3f7", "#aed581", "#ffb74d", "#ba68c8", "#f06292", "#4db6ac", "#fff176", "#90a4ae"]
 BG, FG, MUTED = "#1e1e1e", "#f2f2f2", "#8a8a8a"
+FONT = ("Segoe UI", 11)
 
 
 class CaptionOverlay:
-    def __init__(self, on_mute: Callable[[bool], None], lines: int = 3) -> None:
-        self.on_mute, self.lines = on_mute, lines
-        self._q: queue.Queue[dict] = queue.Queue()
+    def __init__(self, on_pause: Callable[[bool], None], on_hide: Callable[[], None] | None = None,
+                 lines: int = 3, alpha: float = 0.5) -> None:
+        self.on_pause, self.on_hide, self.lines = on_pause, on_hide, lines
+        self._q: queue.Queue = queue.Queue()
         self._done: list[dict] = []
         self._partials: dict[str, dict] = {}
         self._colors: dict[str, str] = {}
-        self._muted = False
-        self._hidden = False
+        self.visible = True
 
         root = self.root = tk.Tk()
         root.overrideredirect(True)
-        root.attributes("-topmost", True, "-alpha", 0.90)
+        root.attributes("-topmost", True, "-alpha", alpha)
         root.configure(bg=BG)
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-        w, h = int(sw * 0.6), 150
-        root.geometry(f"{w}x{h}+{(sw - w) // 2}+{sh - h - 70}")
+        self.w, self.h = max(380, int(sw * 0.28)), 120
+        root.geometry(f"{self.w}x{self.h}+{sw - self.w - 16}+{sh - self.h - 60}")
 
         bar = tk.Frame(root, bg=BG)
-        bar.pack(fill="x", padx=8, pady=(6, 0))
-        self.status = tk.Label(bar, text="connecting…", bg=BG, fg=MUTED, font=("Segoe UI", 9))
+        bar.pack(fill="x", padx=6, pady=(4, 0))
+        self.status = tk.Label(bar, text="connecting…", bg=BG, fg=MUTED, font=("Segoe UI", 8))
         self.status.pack(side="left")
-        tk.Button(bar, text="✕", command=root.destroy, **self._btn()).pack(side="right")
-        self.hide_btn = tk.Button(bar, text="Hide", command=self._toggle_hide, **self._btn())
-        self.hide_btn.pack(side="right", padx=4)
-        self.mute_btn = tk.Button(bar, text="Mute mic", command=self._toggle_mute, **self._btn())
-        self.mute_btn.pack(side="right", padx=4)
+        tk.Button(bar, text="Hide", command=self.hide, **self._btn()).pack(side="right")
+        self.pause_btn = tk.Button(bar, text="Pause", command=self._toggle_pause, **self._btn())
+        self.pause_btn.pack(side="right", padx=4)
         for widget in (bar, self.status):
             widget.bind("<ButtonPress-1>", self._drag_start)
             widget.bind("<B1-Motion>", self._drag_move)
 
         self.text = tk.Text(root, bg=BG, fg=FG, bd=0, highlightthickness=0, wrap="word",
-                            font=("Segoe UI", 14), state="disabled", cursor="arrow")
-        self.text.pack(fill="both", expand=True, padx=12, pady=8)
-        self.text.tag_configure("partial", foreground=MUTED, font=("Segoe UI", 14, "italic"))
+                            font=FONT, state="disabled", cursor="arrow")
+        self.text.pack(fill="both", expand=True, padx=10, pady=6)
+        self.text.tag_configure("partial", foreground=MUTED, font=(*FONT, "italic"))
         self.text.bind("<ButtonPress-1>", self._drag_start)
         self.text.bind("<B1-Motion>", self._drag_move)
+        self._paused = False
         root.after(100, self._drain)
 
     @staticmethod
     def _btn() -> dict:
         return dict(bg="#333", fg=FG, activebackground="#444", activeforeground=FG, bd=0,
-                    padx=8, pady=2, font=("Segoe UI", 9))
+                    padx=6, pady=1, font=("Segoe UI", 8))
 
     # --- public, thread-safe -------------------------------------------------
     def push(self, frame: dict) -> None:
@@ -60,25 +60,31 @@ class CaptionOverlay:
     def set_status(self, text: str) -> None:
         self._q.put({"type": "_status", "text": text})
 
+    def call(self, fn: Callable[[], None]) -> None:
+        """Run `fn` on the Tk thread (for tray callbacks)."""
+        self._q.put({"type": "_call", "fn": fn})
+
     def run(self) -> None:
         self.root.mainloop()
 
-    # --- internals -------------------------------------------------------------
-    def _toggle_mute(self) -> None:
-        self._muted = not self._muted
-        self.mute_btn.configure(text="Unmute" if self._muted else "Mute mic",
-                                bg="#a33" if self._muted else "#333")
-        self.on_mute(self._muted)
+    # --- Tk-thread only --------------------------------------------------------
+    def show(self) -> None:
+        self.root.deiconify()
+        self.root.attributes("-topmost", True)
+        self.visible = True
 
-    def _toggle_hide(self) -> None:
-        self._hidden = not self._hidden
-        if self._hidden:
-            self.text.pack_forget()
-            self.root.geometry(f"{self.root.winfo_width()}x34")
-        else:
-            self.text.pack(fill="both", expand=True, padx=12, pady=8)
-            self.root.geometry(f"{self.root.winfo_width()}x150")
-        self.hide_btn.configure(text="Show" if self._hidden else "Hide")
+    def hide(self) -> None:
+        self.root.withdraw()
+        self.visible = False
+        if self.on_hide:
+            self.on_hide()
+
+    def set_paused(self, paused: bool) -> None:
+        self._paused = paused
+        self.pause_btn.configure(text="Resume" if paused else "Pause", bg="#a33" if paused else "#333")
+
+    def _toggle_pause(self) -> None:
+        self.on_pause(not self._paused)
 
     def _drag_start(self, e) -> None:
         self._dx, self._dy = e.x_root - self.root.winfo_x(), e.y_root - self.root.winfo_y()
@@ -89,8 +95,7 @@ class CaptionOverlay:
     def _color(self, speaker: str) -> str:
         if speaker not in self._colors:
             self._colors[speaker] = PALETTE[len(self._colors) % len(PALETTE)]
-            self.text.tag_configure(f"sp:{speaker}", foreground=self._colors[speaker],
-                                    font=("Segoe UI", 14, "bold"))
+            self.text.tag_configure(f"sp:{speaker}", foreground=self._colors[speaker], font=(*FONT, "bold"))
         return f"sp:{speaker}"
 
     def _drain(self) -> None:
@@ -102,6 +107,8 @@ class CaptionOverlay:
                 break
             if f["type"] == "_status":
                 self.status.configure(text=f["text"])
+            elif f["type"] == "_call":
+                f["fn"]()
             elif f["type"] == "caption":
                 if f["completed"]:
                     self._partials.pop(f["speaker"], None)

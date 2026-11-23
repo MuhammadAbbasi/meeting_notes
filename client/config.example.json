@@ -4,5 +4,6 @@
   "hub_port": 8085,
   "meeting_id": "daily",
   "language": "auto",
-  "input_device": null
+  "input_device": null,
+  "overlay_alpha": 0.5
 }
