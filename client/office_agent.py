@@ -1,45 +1,62 @@
-"""Office Meeting Agent: mic -> caption hub, live overlay, tray control. Run: python client/office_agent.py"""
+"""Office Meeting Agent: mic (+ optional system audio) -> caption hub, live overlay, tray control.
+Run: python client/office_agent.py   (or OfficeMeetingAgent.exe built by build_exe.bat)"""
 from __future__ import annotations
 
 import json
-import shutil
+import logging
+import re
 import sys
 import threading
 from pathlib import Path
 
-from audio_capture import MicCapture
+from audio_capture import LoopbackCapture, MicCapture
 from hub_link import HubLink, finalize, speaker_url
 from overlay_ui import CaptionOverlay
+from setup_dialog import ask_config, ask_meeting
 from tray import Tray
 
-HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))  # PyInstaller-friendly (M4)
+HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))  # bundled resources when frozen
 CONFIG = Path(sys.executable).parent / "config.json" if getattr(sys, "frozen", False) \
     else Path(__file__).with_name("config.json")
+MEETING_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")  # CONTRACTS §1.1
+
+
+def save_config(cfg: dict) -> None:
+    CONFIG.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 
 
 def load_config() -> dict:
-    if not CONFIG.exists():
-        shutil.copy(HERE / "config.example.json", CONFIG)
-        print(f"Created {CONFIG}. Edit user_name / server_ip / meeting_id, then start again.")
-        sys.exit(1)
-    return json.loads(CONFIG.read_text(encoding="utf-8"))
+    if CONFIG.exists():
+        return json.loads(CONFIG.read_text(encoding="utf-8"))
+    defaults = json.loads((HERE / "config.example.json").read_text(encoding="utf-8"))
+    cfg = ask_config(defaults)
+    if cfg is None:
+        sys.exit(0)
+    save_config(cfg)
+    return cfg
 
 
 class Agent:
-    """Owns the three parts and the start/stop/pause state. Tray callbacks are marshalled to Tk."""
+    """Owns audio sources, hub links, overlay and tray; start/stop/pause state. Tray callbacks are marshalled to Tk."""
 
     def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
         self.audio = MicCapture(device=cfg.get("input_device"))
+        self.loop_audio = LoopbackCapture() if cfg.get("capture_system_audio") else None
         self.overlay = CaptionOverlay(on_pause=self.set_paused, on_finalize=self.finalize,
                                       alpha=cfg.get("overlay_alpha", 0.5))
         self.tray = Tray(self)
         self.link: HubLink | None = None
+        self.loop_link: HubLink | None = None
         self.paused = False
 
     @property
     def running(self) -> bool:
         return self.link is not None
+
+    def _url(self, speaker: str) -> str:
+        return speaker_url(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), self.cfg["meeting_id"],
+                           speaker, self.cfg.get("language", "auto"))
 
     def _on_state(self, state: str) -> None:
         self.overlay.set_status(state)
@@ -49,17 +66,22 @@ class Agent:
         if self.running:
             return
         self.audio.start()
-        url = speaker_url(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), self.cfg["meeting_id"],
-                          self.cfg["user_name"], self.cfg.get("language", "auto"))
-        self.link = HubLink(url, self.audio, self.overlay.push, self._on_state)
+        self.link = HubLink(self._url(self.cfg["user_name"]), self.audio, self.overlay.push, self._on_state)
         threading.Thread(target=self.link.run, daemon=True).start()
+        if self.loop_audio is not None and self.loop_audio.start():
+            self.loop_link = HubLink(self._url("Remote-Call"), self.loop_audio, lambda m: None)
+            threading.Thread(target=self.loop_link.run, daemon=True).start()
 
     def stop(self) -> None:
         if not self.running:
             return
-        self.link.stop()
-        self.link = None
+        for link in (self.link, self.loop_link):
+            if link is not None:
+                link.stop()
+        self.link = self.loop_link = None
         self.audio.stop()
+        if self.loop_audio is not None:
+            self.loop_audio.stop()
         self._on_state("stopped")
 
     def toggle_running(self) -> None:
@@ -68,6 +90,8 @@ class Agent:
     def set_paused(self, paused: bool) -> None:
         self.paused = paused
         self.audio.muted = paused
+        if self.loop_audio is not None:
+            self.loop_audio.muted = paused
         self.overlay.call(lambda: self.overlay.set_paused(paused))
         if self.running:
             self.tray.set_state("paused" if paused else "connected")
@@ -82,6 +106,16 @@ class Agent:
             else:
                 self.overlay.set_status(f"minutes saved ({'LLM' if r['llm'] else 'transcript'}, odoo: {r['odoo']['status']})")
         threading.Thread(target=work, daemon=True).start()
+
+    def change_meeting(self) -> None:
+        def on_tk():
+            new = ask_meeting(self.overlay.root, self.cfg["meeting_id"])
+            if new and MEETING_ID_RE.fullmatch(new):
+                self.stop()
+                self.cfg["meeting_id"] = new
+                save_config(self.cfg)
+                self.start()
+        self.overlay.call(on_tk)
 
     def toggle_overlay(self) -> None:
         self.overlay.call(self.overlay.hide if self.overlay.visible else self.overlay.show)
@@ -102,4 +136,5 @@ class Agent:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     Agent(load_config()).run()

@@ -1,0 +1,20 @@
+{
+  "Muhammad": [
+    "Buongiorno a tutti, partiamo dal tracker report di Mazara.",
+    "Ieri il tracker T12 ha perso la comunicazione per due ore.",
+    "Propongo di aggiungere un controllo automatico sui log SCADA.",
+    "Gabriele, puoi verificare i dati dell'inverter entro venerdì?"
+  ],
+  "Gabriele": [
+    "Ok, I checked the inverter telemetry this morning.",
+    "The drop matches a grid event, not a hardware fault.",
+    "I will export the VCOM data and share it by Friday.",
+    "We should also update the PR calculation template."
+  ],
+  "Ginadomenico": [
+    "buongiorno a tutti partiamo dal tracker report di mazara",
+    "ieri il tracker t 12 ha perso la comunicazione per due ore",
+    "aggiungere un controllo automatico sui log scada",
+    "gabriele puoi verificare i dati dell inverter entro venerdi"
+  ]
+}

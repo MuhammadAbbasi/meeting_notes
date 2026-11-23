@@ -4,3 +4,5 @@ websockets>=13
 numpy>=1.26
 pystray>=0.19
 pillow>=10
+# optional, Windows system-audio (loopback) capture:
+pyaudiowpatch>=0.2 ; sys_platform == "win32"

@@ -5,5 +5,6 @@
   "meeting_id": "daily",
   "language": "auto",
   "input_device": null,
-  "overlay_alpha": 0.5
+  "overlay_alpha": 0.5,
+  "capture_system_audio": false
 }

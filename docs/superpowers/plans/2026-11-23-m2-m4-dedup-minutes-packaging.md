@@ -37,8 +37,8 @@
 - CONTRACTS §1.1 adds `{"type":"retract","meeting_id":str,"speaker":str}` → clients clear that speaker's partial.
 - Hub: `on_segments` completed → `filter.add(frame)`, `asyncio.create_task(_flush(room, frame))`: sleep `DEDUP_HOLD_S`, emit or retract.
 
-- [ ] Tests: `test_similarity_handles_stt_noise` ("il tracker T12 ha perso la comunicazione per due ore" vs "il tracker t 12 ha perso la comunicazione, per due ore." ≥ 0.9), `test_containment_counts_as_similar`, `test_short_phrases_never_suppressed`, `test_quieter_duplicate_suppressed_either_order`, `test_outside_window_not_suppressed`, `test_different_text_not_suppressed`, `test_same_speaker_never_suppressed`, hub: `test_bleed_suppressed_and_retracted` (two mock speakers, same script line, hold 0.2 s, quieter one gets `retract`, 1 persisted).
-- [ ] Implement, run, commit `feat(server): cross-talk dedup with hold window and retract`.
+- [x] Tests: `test_similarity_handles_stt_noise` ("il tracker T12 ha perso la comunicazione per due ore" vs "il tracker t 12 ha perso la comunicazione, per due ore." ≥ 0.9), `test_containment_counts_as_similar`, `test_short_phrases_never_suppressed`, `test_quieter_duplicate_suppressed_either_order`, `test_outside_window_not_suppressed`, `test_different_text_not_suppressed`, `test_same_speaker_never_suppressed`, hub: `test_bleed_suppressed_and_retracted` (two mock speakers, same script line, hold 0.2 s, quieter one gets `retract`, 1 persisted).
+- [x] Implement, run, commit `feat(server): cross-talk dedup with hold window and retract`.
 
 ### Task 2: Ollama synthesizer (`server/ollama_synthesizer.py`)
 
@@ -48,22 +48,22 @@
 - `clean_response(text) -> str` – drop `<think>…</think>`, unwrap ``` fences, strip.
 - `synthesize(segments, meeting_id, url, model, timeout=300) -> str` – POST `/api/chat` `{"model","messages","stream":false,"options":{"temperature":0.2}}` via `urllib`; raises `SynthesisUnavailable` on any error.
 
-- [ ] Tests (monkeypatched `urllib.request.urlopen`): `test_build_messages_contains_sections_and_speakers`, `test_clean_response_strips_think_and_fences`, `test_synthesize_posts_expected_payload`, `test_synthesize_raises_when_offline`, `test_transcript_markdown_fallback`.
-- [ ] Implement, run, commit `feat(server): Ollama minutes synthesizer`.
+- [x] Tests (monkeypatched `urllib.request.urlopen`): `test_build_messages_contains_sections_and_speakers`, `test_clean_response_strips_think_and_fences`, `test_synthesize_posts_expected_payload`, `test_synthesize_raises_when_offline`, `test_transcript_markdown_fallback`.
+- [x] Implement, run, commit `feat(server): Ollama minutes synthesizer`.
 
 ### Task 3: Odoo client (`server/odoo_client.py`)
 
 Port `odoo_integration_idea.txt` as-is (class `OdooMeetingClient`), plus `publish_or_save(meeting_id, markdown, participants, out_dir) -> dict` (`{"status":"published",...}` or `{"status":"saved_locally","path":...,"reason":...}`); aliases from `SPEAKER_ALIASES`.
 
-- [ ] Tests with a fake `_execute` (records calls, returns canned users/ids): `test_parse_noisy_action_table`, `test_normalize_deadline_formats`, `test_markdown_to_html_lists_and_bold`, `test_resolve_alias_exact_firstname_fuzzy_unresolved`, `test_publish_creates_parent_and_assigned_subtasks`, `test_publish_or_save_when_unconfigured`.
-- [ ] Implement, run, commit `feat(server): Odoo 18 client with sub-tasks and local fallback`.
+- [x] Tests with a fake `_execute` (records calls, returns canned users/ids): `test_parse_noisy_action_table`, `test_normalize_deadline_formats`, `test_markdown_to_html_lists_and_bold`, `test_resolve_alias_exact_firstname_fuzzy_unresolved`, `test_publish_creates_parent_and_assigned_subtasks`, `test_publish_or_save_when_unconfigured`.
+- [x] Implement, run, commit `feat(server): Odoo 18 client with sub-tasks and local fallback`.
 
 ### Task 4: Finalize endpoint + client button
 
 - `POST /api/meetings/{id}/finalize` → 404 if no segments; else `{"meeting_id","markdown","llm":bool,"saved_to":str,"odoo":dict}`; writes `data/meetings/<id>.minutes.md`; broadcasts `{"type":"finalized","meeting_id","llm":bool,"odoo_status":str}` to the room. CONTRACTS §1.3 updated.
 - Overlay button **Finalize** and tray item **Finalize & push to Odoo** → `hub_link.finalize(http_url, meeting_id) -> dict` in a thread; status shows result.
-- [ ] Tests: `test_finalize_without_odoo` (Ollama monkeypatched to return canned Markdown; odoo unconfigured → saved_locally, file exists), `test_finalize_llm_offline_falls_back` (`llm: false`, transcript markdown), `test_finalize_empty_404`.
-- [ ] Implement, run, commit `feat: finalize endpoint, minutes file, overlay/tray finalize`.
+- [x] Tests: `test_finalize_without_odoo` (Ollama monkeypatched to return canned Markdown; odoo unconfigured → saved_locally, file exists), `test_finalize_llm_offline_falls_back` (`llm: false`, transcript markdown), `test_finalize_empty_404`.
+- [x] Implement, run, commit `feat: finalize endpoint, minutes file, overlay/tray finalize`.
 
 ### Task 5: Loopback, first-run dialog, meeting switcher, exe
 
@@ -71,12 +71,12 @@ Port `odoo_integration_idea.txt` as-is (class `OdooMeetingClient`), plus `publis
 - `client/setup_dialog.py`: `ask_config(defaults: dict) -> dict | None` tkinter form (user_name, server_ip, meeting_id, language, capture_system_audio).
 - `office_agent.py`: no config → dialog instead of exit; `capture_system_audio` → second `HubLink` with speaker `Remote-Call`; tray **Change meeting…** → `ask_meeting()` → stop/start.
 - `client/build_exe.bat`: `pyinstaller --onefile --windowed --name OfficeMeetingAgent --add-data "config.example.json;." office_agent.py`.
-- [ ] Tests: `test_loopback_missing_device_is_noop`, `test_loopback_resamples_stereo_48k_to_mono_16k` (fake stream delivering int16 stereo 48 kHz → 4096 float32 mono samples per read).
-- [ ] Implement, run, commit `feat(client): loopback stream, setup dialog, meeting switcher, exe build`.
+- [x] Tests: `test_loopback_missing_device_is_noop`, `test_loopback_resamples_stereo_48k_to_mono_16k` (fake stream delivering int16 stereo 48 kHz → 4096 float32 mono samples per read).
+- [x] Implement, run, commit `feat(client): loopback stream, setup dialog, meeting switcher, exe build`.
 
 ### Task 6: README + noisy end-to-end
 
 - `README.md`: what it is, architecture diagram (text), server start on .17, model pull, client install/exe, first run, tray usage, finalize, Odoo setup, troubleshooting, testing (mock, simulator, bleed simulation, WAV + `--noise`).
 - Simulator: `--quiet NAME` (amplitude 0.03 for that speaker), `--noise 0.02` (Gaussian noise added to all audio), `--expect-suppressed NAME` (fails if that speaker has persisted segments), `--finalize` (calls finalize and prints the Markdown head). `tests/mock_script_bleed.json`: Ginadomenico's lines are noisy copies of Muhammad's.
-- [ ] Verify: bleed simulation → suppressed speaker has 0 persisted, exit 0; finalize with Ollama offline → fallback Markdown saved.
-- [ ] Commit `docs: README; test: noisy/bleed simulation`, push.
+- [x] Verify: bleed simulation → suppressed speaker has 0 persisted, exit 0; finalize with Ollama offline → fallback Markdown saved.
+- [x] Commit `docs: README; test: noisy/bleed simulation`, push.

@@ -1,9 +1,54 @@
 import itertools
 
 import numpy as np
+import pytest
 
-from client.audio_capture import MicCapture
+from client.audio_capture import LoopbackCapture, MicCapture
 from client.hub_link import backoff_delays, speaker_url
+
+
+def test_loopback_missing_device_is_noop():
+    def factory(cb):
+        raise RuntimeError("no WASAPI loopback device")
+
+    cap = LoopbackCapture(_stream_factory=factory)
+    assert cap.start() is False
+    cap.stop()  # must not raise
+    assert cap.read(timeout=0.01) is None
+
+
+def test_loopback_resamples_stereo_48k_to_mono_16k():
+    class FakePA:
+        def __init__(self, cb):
+            self.cb, self.running = cb, False
+
+        def start_stream(self):
+            self.running = True
+
+        def stop_stream(self):
+            self.running = False
+
+        def close(self):
+            pass
+
+    streams = []
+    cap = LoopbackCapture(blocksize=4096, _stream_factory=lambda cb: streams.append(FakePA(cb)) or streams[-1])
+    cap.src_rate, cap.channels = 48000, 2
+    assert cap.start() is True and streams[0].running
+    frame = np.full((4800, 2), 16384, dtype=np.int16)  # 0.1 s stereo at 48 kHz, value 0.5
+    frame[:, 1] = -16384  # right channel inverted: mono mix must be ~0, so use left-only check below
+    frame[:, 1] = 16384
+    for _ in range(12):  # 1.2 s -> 19200 samples at 16 kHz -> 4 full blocks
+        assert streams[0].cb(frame.tobytes(), 4800, None, None) == (None, 0)
+    blocks = [cap.read(timeout=0.01) for _ in range(5)]
+    assert blocks[4] is None and all(len(b) == 4096 * 4 for b in blocks[:4])
+    assert np.frombuffer(blocks[0], dtype=np.float32).mean() == pytest.approx(0.5, abs=1e-3)
+    cap.muted = True
+    streams[0].cb(frame.tobytes(), 4800, None, None); streams[0].cb(frame.tobytes(), 4800, None, None)
+    streams[0].cb(frame.tobytes(), 4800, None, None)
+    assert cap.read() == bytes(4096 * 4)
+    cap.stop()
+    assert not streams[0].running
 
 
 def test_backoff_sequence():
