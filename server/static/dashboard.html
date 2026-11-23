@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caption hub · dashboard</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --muted:#777; --line:#e5e5e5; --card:#fafafa; --ok:#2e9e5b; --bad:#d9433b; --warn:#d9a21b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#888; --line:#2a2a2a; --card:#181818; } }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui, sans-serif; }
+  header { display:flex; gap:14px; align-items:baseline; padding:12px 24px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  header .muted { color:var(--muted); font-size:13px; }
+  header a { margin-left:auto; font-size:13px; }
+  main { max-width:1200px; margin:0 auto; padding:16px 24px 80px; }
+  h2 { font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:22px 0 10px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .card h3 { margin:0 0 8px; font-size:14px; display:flex; align-items:center; gap:8px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); display:inline-block; }
+  .dot.ok { background:var(--ok); } .dot.bad { background:var(--bad); } .dot.warn { background:var(--warn); }
+  dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-size:13px; }
+  dt { color:var(--muted); } dd { margin:0; word-break:break-all; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  tr.row { cursor:pointer; } tr.row:hover, tr.sel { background:var(--card); }
+  .tag { border-radius:999px; padding:1px 9px; font-size:12px; background:var(--line); white-space:nowrap; }
+  .tag.ok { background:var(--ok); color:#fff; } .tag.bad { background:var(--bad); color:#fff; } .tag.warn { background:var(--warn); color:#fff; }
+  button { font:inherit; font-size:13px; padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  #detail { margin-top:18px; border:1px solid var(--line); border-radius:10px; padding:14px 18px; display:none; }
+  #detail .bar { display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+  #detail .bar b { margin-right:auto; }
+  .tab.on { background:var(--fg); color:var(--bg); }
+  .md h2, .md h3 { text-transform:none; letter-spacing:0; color:var(--fg); font-size:16px; margin:16px 0 6px; }
+  .md table { width:auto; margin:6px 0; } .md td, .md th { border:1px solid var(--line); }
+  .md p { margin:4px 0; }
+  .seg { display:grid; grid-template-columns:130px 1fr; gap:12px; padding:5px 0; border-bottom:1px solid var(--line); }
+  .seg .who { font-weight:600; } .seg .t { color:var(--muted); font-size:12px; }
+  .empty { color:var(--muted); padding:20px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Caption hub · dashboard</h1>
+  <span class="muted" id="health">loading…</span>
+  <a href="/health">/health</a>
+</header>
+<main>
+  <h2>Settings</h2>
+  <div class="cards" id="cards"></div>
+
+  <h2>Meetings</h2>
+  <table>
+    <thead><tr><th>Meeting</th><th>Date</th><th>Duration</th><th>Speakers</th><th>Captions</th><th>Minutes</th><th>Odoo</th><th></th></tr></thead>
+    <tbody id="meetings"><tr><td colspan="8" class="empty">loading…</td></tr></tbody>
+  </table>
+
+  <section id="detail">
+    <div class="bar">
+      <b id="d-title"></b>
+      <button class="tab on" data-tab="minutes">Minutes</button>
+      <button class="tab" data-tab="transcript">Transcript</button>
+      <a id="d-live" target="_blank">live captions ↗</a>
+      <button id="d-finalize">Finalize</button>
+      <button id="d-close">✕</button>
+    </div>
+    <div id="d-body"></div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtDate = ts => ts ? new Date(ts * 1000).toLocaleString() : "–";
+const fmtDur = (a, b) => (a && b) ? Math.max(1, Math.round((b - a) / 60)) + " min" : "–";
+const dot = ok => `<span class="dot ${ok === null ? "" : ok ? "ok" : "bad"}"></span>`;
+let selected = null, tab = "minutes";
+
+function card(title, ok, rows) {
+  return `<div class="card"><h3>${dot(ok)}${esc(title)}</h3><dl>` +
+    rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v === null || v === undefined || v === "" ? "<span class=muted>–</span>" : esc(v)}</dd>`).join("") + `</dl></div>`;
+}
+
+async function loadSettings() {
+  const s = await (await fetch("/api/settings")).json();
+  const live = Object.entries(s.live_rooms);
+  $("#cards").innerHTML = [
+    card("Transcriber (WhisperLive)", s.transcriber.kind === "mock" ? null : s.transcriber.reachable, [
+      ["mode", s.transcriber.kind], ["url", s.transcriber.url], ["model", s.transcriber.model]]),
+    card("Minutes LLM (Ollama)", s.llm.reachable, [
+      ["url", s.llm.url], ["model", s.llm.model],
+      ["pulled", s.llm.reachable ? (s.llm.model_pulled ? "yes" : "NO – run: ollama pull " + s.llm.model) : "unknown (offline)"],
+      ["available", s.llm.models.join(", ")]]),
+    card("Odoo 18", s.odoo.configured ? s.odoo.reachable : null, [
+      ["status", s.odoo.configured ? "configured" : "not configured (minutes saved locally only)"],
+      ["url", s.odoo.url], ["database", s.odoo.db], ["user", s.odoo.user], ["api key", s.odoo.api_key],
+      ["project id", s.odoo.project_id],
+      ["speaker aliases", Object.entries(s.odoo.speaker_aliases).map(([a, b]) => `${a} → ${b}`).join(", ")]]),
+    card("Cross-talk suppression & storage", null, [
+      ["hold", s.dedup.hold_s + " s"], ["window", s.dedup.window_s + " s"], ["similarity", s.dedup.similarity],
+      ["data dir", s.storage.data_dir], ["meetings on disk", s.storage.meetings],
+      ["live now", live.length ? live.map(([id, sp]) => `${id} (${sp.join(", ") || "no speakers"})`).join("; ") : "none"]]),
+  ].join("");
+}
+
+function minutesTag(m) {
+  if (!m) return `<span class="tag">none</span>`;
+  if (m.status === "file_only") return `<span class="tag warn">file</span>`;
+  return `<span class="tag ${m.llm ? "ok" : "warn"}">${m.llm ? "LLM" : "transcript"}</span>`;
+}
+function odooTag(m) {
+  const o = m && m.odoo;
+  if (!o) return `<span class="tag">–</span>`;
+  if (o.status === "published") return `<span class="tag ok">task #${esc(o.parent_task_id)}</span>`;
+  return `<span class="tag bad" title="${esc(o.reason || "")}">local</span>`;
+}
+
+async function loadMeetings() {
+  const rows = await (await fetch("/api/meetings")).json();
+  $("#meetings").innerHTML = rows.length ? rows.map(r => `
+    <tr class="row ${r.meeting_id === selected ? "sel" : ""}" data-id="${esc(r.meeting_id)}">
+      <td><code>${esc(r.meeting_id)}</code>${r.live ? ' <span class="tag ok">live</span>' : ""}</td>
+      <td>${fmtDate(r.started)}</td><td>${fmtDur(r.started, r.ended)}</td>
+      <td>${r.speakers.map(esc).join(", ")}</td><td>${r.segments}</td>
+      <td>${minutesTag(r.minutes)}</td><td>${odooTag(r.minutes)}</td>
+      <td><a href="/captions/${esc(r.meeting_id)}" target="_blank" onclick="event.stopPropagation()">open ↗</a></td>
+    </tr>`).join("") : `<tr><td colspan="8" class="empty">no meetings yet – start the agent on a workstation</td></tr>`;
+  document.querySelectorAll("tr.row").forEach(tr => tr.onclick = () => select(tr.dataset.id));
+}
+
+// ponytail: ~20-line markdown renderer (headings, bold, code, lists, tables); swap for marked.js if minutes get fancier
+function md(src) {
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`(.+?)`/g, "<code>$1</code>");
+  const out = []; let list = null, table = false;
+  const flush = () => { if (list) { out.push(`</${list}>`); list = null; } if (table) { out.push("</table>"); table = false; } };
+  for (const line of src.split("\n")) {
+    let m;
+    if ((m = line.match(/^(#{1,6})\s+(.*)/))) { flush(); const h = Math.min(m[1].length + 1, 6); out.push(`<h${h}>${inline(m[2])}</h${h}>`); }
+    else if (/^\s*\|/.test(line)) {
+      if (/^\s*\|?\s*:?-{2,}/.test(line)) continue;
+      const cells = line.trim().replace(/^\||\|$/g, "").split("|");
+      const tag = table ? "td" : "th";
+      if (!table) { flush(); table = true; out.push("<table>"); }
+      out.push("<tr>" + cells.map(c => `<${tag}>${inline(c.trim())}</${tag}>`).join("") + "</tr>");
+    }
+    else if ((m = line.match(/^\s*[-*]\s+(.*)/))) { if (list !== "ul") { flush(); list = "ul"; out.push("<ul>"); } out.push(`<li>${inline(m[1])}</li>`); }
+    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { if (list !== "ol") { flush(); list = "ol"; out.push("<ol>"); } out.push(`<li>${inline(m[1])}</li>`); }
+    else if (!line.trim()) flush();
+    else { flush(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  flush(); return out.join("");
+}
+
+async function showDetail() {
+  if (!selected) return;
+  $("#detail").style.display = "block";
+  $("#d-title").textContent = selected;
+  $("#d-live").href = `/captions/${selected}`;
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  const body = $("#d-body");
+  if (tab === "minutes") {
+    const r = await fetch(`/api/meetings/${selected}/minutes`);
+    body.innerHTML = r.ok ? `<div class="md">${md(await r.text())}</div>`
+                          : `<div class="empty">Not finalized yet. Click <b>Finalize</b> to generate the minutes.</div>`;
+  } else {
+    const segs = await (await fetch(`/api/meetings/${selected}/segments`)).json();
+    body.innerHTML = segs.map(s => `<div class="seg"><div><div class="who">${esc(s.speaker)}</div><div class="t">${new Date(s.ts * 1000).toLocaleTimeString()}</div></div><div>${esc(s.text)}</div></div>`).join("") || `<div class="empty">no captions</div>`;
+  }
+}
+
+function select(id) { selected = id; loadMeetings(); showDetail(); $("#detail").scrollIntoView({ behavior: "smooth", block: "start" }); }
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => { tab = b.dataset.tab; showDetail(); });
+$("#d-close").onclick = () => { selected = null; $("#detail").style.display = "none"; loadMeetings(); };
+$("#d-finalize").onclick = async () => {
+  const btn = $("#d-finalize"); btn.disabled = true; btn.textContent = "Finalizing… (LLM may take minutes)";
+  try {
+    const r = await fetch(`/api/meetings/${selected}/finalize`, { method: "POST" });
+    const j = await r.json();
+    btn.textContent = r.ok ? `done: ${j.llm ? "LLM" : "transcript"} · odoo ${j.odoo.status}` : `error: ${j.detail || r.status}`;
+    tab = "minutes"; await loadMeetings(); await showDetail();
+  } catch (e) { btn.textContent = "error: " + e; }
+  setTimeout(() => { btn.disabled = false; btn.textContent = "Finalize"; }, 6000);
+};
+
+async function refresh() {
+  try {
+    const h = await (await fetch("/health")).json();
+    $("#health").textContent = `${h.transcriber} · ${h.rooms} live room(s) · ${new Date().toLocaleTimeString()}`;
+    await Promise.all([loadSettings(), loadMeetings()]);
+  } catch (e) { $("#health").textContent = "hub unreachable: " + e; }
+}
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

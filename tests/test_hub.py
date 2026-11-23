@@ -205,6 +205,41 @@ def test_finalize_empty_404(client):
     assert client.post("/api/meetings/bad%20id/finalize").status_code == 400
 
 
+def test_settings_masks_secrets_and_reports_reachability(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path, ODOO_URL="http://127.0.0.1:1", ODOO_DB="db", ODOO_USER="u",
+                     ODOO_API_KEY="supersecret", ODOO_PROJECT_ID="7", OLLAMA_URL="http://127.0.0.1:1",
+                     SPEAKER_ALIASES='{"Ginadomenico": "Gian Domenico"}') as c:
+        r = c.get("/api/settings")
+        assert r.status_code == 200 and "supersecret" not in r.text
+        s = r.json()
+        assert s["odoo"] == {"url": "http://127.0.0.1:1", "db": "db", "user": "u", "api_key": "set", "project_id": 7,
+                             "configured": True, "reachable": False, "speaker_aliases": {"ginadomenico": "Gian Domenico"}}
+        assert s["llm"]["reachable"] is False and s["llm"]["model_pulled"] is False
+        assert s["transcriber"]["kind"] == "mock" and s["transcriber"]["reachable"] is True
+        assert s["dedup"]["hold_s"] == 0 and s["storage"]["meetings"] == 0 and s["live_rooms"] == {}
+        assert "Meetings" in c.get("/dashboard").text
+
+
+def test_meeting_history_and_minutes(client, monkeypatch):
+    monkeypatch.setattr(client.hub, "synthesize", lambda segs, mid, url, model: CANNED_MD)
+    assert client.get("/api/meetings").json() == []
+    with client.websocket_connect("/ws/daily/Muhammad") as ws:
+        next_of(ws, "roster")
+        ws.send_bytes(pcm(4.0))
+        next_of(ws, "caption", completed=True)
+        assert client.get("/api/meetings").json()[0]["live"] is True
+    assert client.get("/api/meetings/daily/minutes").status_code == 404
+    client.post("/api/meetings/daily/finalize")
+    rows = client.get("/api/meetings").json()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["meeting_id"] == "daily" and row["speakers"] == ["Muhammad"] and row["segments"] >= 1
+    assert row["started"] <= row["ended"] and row["live"] is False
+    assert row["minutes"]["llm"] is True and row["minutes"]["odoo"]["status"] == "saved_locally"
+    assert client.get("/api/meetings/daily/minutes").text == CANNED_MD
+    assert client.get("/api/meetings/bad%20id/minutes").status_code == 400
+
+
 def test_viewer_served(client):
     r = client.get("/captions/daily")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")

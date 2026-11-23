@@ -8,10 +8,13 @@ import asyncio
 import json
 import logging
 import os
+import time
+import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, WebSocket
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from server.deduplicator import CrossTalkFilter
@@ -23,12 +26,16 @@ from server.transcriber import TranscriberUnavailable, make_transcriber
 log = logging.getLogger("hub")
 DATA_DIR = Path(os.getenv("DATA_DIR", "./data/meetings"))
 TRANSCRIBER_KIND = os.getenv("TRANSCRIBER", "whisperlive")
+WHISPERLIVE_URL = os.getenv("WHISPERLIVE_URL", "ws://whisperlive:9090")
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "deepdml/faster-whisper-large-v3-turbo-ct2")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
 DEDUP_HOLD_S = float(os.getenv("DEDUP_HOLD_S", "2.5"))
 DEDUP_WINDOW_S = float(os.getenv("DEDUP_WINDOW_S", "2.0"))
 DEDUP_SIMILARITY = float(os.getenv("DEDUP_SIMILARITY", "0.78"))
-VIEWER_HTML = (Path(__file__).parent / "static" / "captions.html").read_text(encoding="utf-8")
+_STATIC = Path(__file__).parent / "static"
+VIEWER_HTML = (_STATIC / "captions.html").read_text(encoding="utf-8")
+DASHBOARD_HTML = (_STATIC / "dashboard.html").read_text(encoding="utf-8")
 
 app = FastAPI(title="caption-hub")
 rooms: dict[str, MeetingRoom] = {}
@@ -82,9 +89,83 @@ async def viewer(meeting_id: str) -> str:
     return VIEWER_HTML.replace("__MEETING_ID__", _valid_id(meeting_id))
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard() -> str:
+    return DASHBOARD_HTML
+
+
+async def _reachable(url: str, timeout: float = 2.0) -> bool:
+    """TCP connect check; enough to tell 'container down' from 'up' without speaking the protocol."""
+    u = urlsplit(url)
+    port = u.port or (443 if u.scheme in ("https", "wss") else 80)
+    try:
+        _, w = await asyncio.wait_for(asyncio.open_connection(u.hostname, port), timeout)
+        w.close()
+        return True
+    except (OSError, asyncio.TimeoutError, ValueError):
+        return False
+
+
+def _ollama_models(url: str, timeout: float = 2.0) -> list[str] | None:
+    try:
+        with urllib.request.urlopen(f"{url}/api/tags", timeout=timeout) as r:
+            return sorted(m["name"] for m in json.load(r).get("models", []))
+    except Exception:
+        return None
+
+
+@app.get("/api/settings")
+async def settings() -> dict:
+    """Effective configuration plus live reachability of each dependency. Secrets are masked."""
+    odoo = OdooMeetingClient()
+    whisper_ok, odoo_ok, models = await asyncio.gather(
+        _reachable(WHISPERLIVE_URL) if TRANSCRIBER_KIND != "mock" else asyncio.sleep(0, True),
+        _reachable(odoo.url) if odoo.url else asyncio.sleep(0, False),
+        asyncio.to_thread(_ollama_models, OLLAMA_URL))
+    pulled = any(m == OLLAMA_MODEL or m.split(":")[0] == OLLAMA_MODEL for m in models or [])
+    return {
+        "transcriber": {"kind": TRANSCRIBER_KIND, "url": WHISPERLIVE_URL, "model": WHISPER_MODEL, "reachable": whisper_ok},
+        "llm": {"url": OLLAMA_URL, "model": OLLAMA_MODEL, "reachable": models is not None,
+                "model_pulled": pulled, "models": models or []},
+        "odoo": {"url": odoo.url, "db": odoo.db, "user": odoo.username, "api_key": "set" if odoo.api_key else "not set",
+                 "project_id": odoo.project_id, "configured": odoo.is_configured, "reachable": odoo_ok,
+                 "speaker_aliases": odoo.speaker_aliases},
+        "dedup": {"hold_s": DEDUP_HOLD_S, "window_s": DEDUP_WINDOW_S, "similarity": DEDUP_SIMILARITY},
+        "storage": {"data_dir": str(DATA_DIR.resolve()), "meetings": len(list(DATA_DIR.glob("*.jsonl")))},
+        "live_rooms": {mid: sorted(r.speakers) for mid, r in rooms.items()},
+    }
+
+
+def _meeting_summary(path: Path) -> dict:
+    mid = path.stem
+    segs = MeetingRoom(mid, DATA_DIR).history()  # ponytail: re-reads every jsonl per request; fine for an office
+    ts = [s["ts"] for s in segs]
+    info = DATA_DIR / f"{mid}.finalize.json"
+    if info.exists():
+        minutes = json.loads(info.read_text(encoding="utf-8"))
+    else:
+        minutes = {"status": "file_only"} if (DATA_DIR / f"{mid}.minutes.md").exists() else None
+    return {"meeting_id": mid, "segments": len(segs), "speakers": sorted({s["speaker"] for s in segs}),
+            "started": min(ts, default=None), "ended": max(ts, default=None), "live": mid in rooms, "minutes": minutes}
+
+
+@app.get("/api/meetings")
+async def meetings() -> list[dict]:
+    rows = [_meeting_summary(p) for p in DATA_DIR.glob("*.jsonl")]
+    return sorted(rows, key=lambda r: r["ended"] or 0, reverse=True)
+
+
 @app.get("/api/meetings/{meeting_id}/segments")
 async def segments(meeting_id: str) -> list[dict]:
     return MeetingRoom(_valid_id(meeting_id), DATA_DIR).history()
+
+
+@app.get("/api/meetings/{meeting_id}/minutes", response_class=PlainTextResponse)
+async def minutes(meeting_id: str) -> str:
+    path = DATA_DIR / f"{_valid_id(meeting_id)}.minutes.md"
+    if not path.exists():
+        raise HTTPException(404, "meeting not finalized yet")
+    return path.read_text(encoding="utf-8")
 
 
 @app.post("/api/meetings/{meeting_id}/finalize")
@@ -102,6 +183,8 @@ async def finalize(meeting_id: str) -> dict:
         markdown, llm = transcript_markdown(segs), False
     participants = sorted({s["speaker"] for s in segs})
     odoo = await asyncio.to_thread(OdooMeetingClient().publish_or_save, meeting_id, markdown, participants, DATA_DIR)
+    (DATA_DIR / f"{meeting_id}.finalize.json").write_text(
+        json.dumps({"finalized_at": time.time(), "llm": llm, "odoo": odoo}), encoding="utf-8")
     if meeting_id in rooms:
         await rooms[meeting_id].broadcast({"type": "finalized", "meeting_id": meeting_id, "llm": llm,
                                            "odoo_status": odoo["status"]})

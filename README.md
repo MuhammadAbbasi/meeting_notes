@@ -40,6 +40,22 @@ curl http://localhost:8085/health    # {"status":"ok","transcriber":"whisperlive
 
 Open firewall ports **8085** (hub) on the host; 9090/11434 only need to be reachable inside Docker.
 
+### Dashboard
+
+`http://<hub-ip>:8085/dashboard` (no login; LAN only) shows:
+
+- **Settings** as read by the running hub: transcriber mode/URL/model, Ollama URL/model and
+  whether that model is pulled, Odoo URL/database/user/project (API key shown only as set/not set),
+  speaker aliases, cross-talk thresholds, data directory. A coloured dot per card tells whether the
+  service answers (green/red; grey = not configured or mock). Refreshes every 15 s.
+- **Meetings**: every meeting on disk, newest first, with date, duration, speakers, caption count,
+  minutes status (`LLM` / `transcript` fallback / `file` / none), Odoo result (task number or
+  `local`), live badge for rooms with connected agents, and a link to the live caption page.
+- Click a row to read the **minutes** (rendered) or the raw **transcript**, or to **Finalize** a
+  meeting that was never finalized (same as the agent button).
+
+Settings are read-only here: change `.env` and `docker compose up -d` to apply.
+
 `WHISPER_MODEL` must be a local path or a Hugging Face id containing a `/`
 (`deepdml/faster-whisper-large-v3-turbo-ct2` by default; `Systran/faster-whisper-large-v3` for
 maximum accuracy at ~3× the GPU cost). WhisperLive runs in batched single-model mode so VRAM is
@@ -139,5 +155,6 @@ Layout: `server/` hub, transcriber adapters, dedup, Ollama, Odoo · `client/` Wi
 | Captions appear 2–3 s after the sentence ends | expected: `DEDUP_HOLD_S` hold for bleed suppression; set `0` to disable |
 | Two people's identical sentence both kept | they were > 2 s apart or < 4 words; tune `DEDUP_WINDOW_S`, `DEDUP_SIMILARITY` |
 | Finalize says `transcript` instead of `LLM` | Ollama down or model not pulled: `docker compose exec ollama ollama list` |
-| Finalize says `saved_locally` | Odoo not configured or unreachable; see hub log, file is in `data/meetings/` |
+| Finalize says `saved_locally` | Odoo not configured or unreachable; see hub log, file is in `data/meetings/`. The dashboard shows the reason on hover of the red `local` tag |
+| Dashboard card red | the hub cannot open a TCP connection to that URL: container down, wrong `.env` URL, or firewall |
 | System audio not captured | `pip install pyaudiowpatch` (Python ≤ 3.12), default playback device must be a WASAPI device |

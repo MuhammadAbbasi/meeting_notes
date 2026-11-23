@@ -52,7 +52,18 @@ sends nothing.
 - `POST /api/meetings/{meeting_id}/finalize` → 404 if no segments, else
   `{"meeting_id":str,"markdown":str,"llm":bool,"saved_to":str,"odoo":{"status":"published"|"saved_locally",...}}`.
   `llm:false` means Ollama was unreachable and `markdown` is the plain transcript. Minutes are
-  always written to `data/meetings/{meeting_id}.minutes.md`.
+  always written to `data/meetings/{meeting_id}.minutes.md`, and the outcome to
+  `data/meetings/{meeting_id}.finalize.json` (`{"finalized_at":float,"llm":bool,"odoo":{...}}`).
+- `GET /dashboard` → HTML admin page (settings, dependency status, meeting history, minutes).
+- `GET /api/settings` → effective configuration with secrets masked (`"api_key":"set"|"not set"`):
+  `{"transcriber":{kind,url,model,reachable},"llm":{url,model,reachable,model_pulled,models[]},
+  "odoo":{url,db,user,api_key,project_id,configured,reachable,speaker_aliases},
+  "dedup":{hold_s,window_s,similarity},"storage":{data_dir,meetings},"live_rooms":{id:[speakers]}}`.
+  `reachable` is a 2 s TCP connect (Ollama: `GET /api/tags`); for `TRANSCRIBER=mock` it is `true`.
+- `GET /api/meetings` → list, newest first, of
+  `{"meeting_id","segments":int,"speakers":[...],"started":ts|null,"ended":ts|null,"live":bool,
+  "minutes":null|{"status":"file_only"}|<finalize.json contents>}`.
+- `GET /api/meetings/{meeting_id}/minutes` → `text/plain` Markdown of the saved minutes, 404 if not finalized.
 
 ### 1.5 Cross-talk suppression (hub-internal, affects 1.1)
 
