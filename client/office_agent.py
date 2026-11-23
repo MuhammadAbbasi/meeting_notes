@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 
 from audio_capture import MicCapture
-from hub_link import HubLink, speaker_url
+from hub_link import HubLink, finalize, speaker_url
 from overlay_ui import CaptionOverlay
 from tray import Tray
 
@@ -31,7 +31,8 @@ class Agent:
     def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
         self.audio = MicCapture(device=cfg.get("input_device"))
-        self.overlay = CaptionOverlay(on_pause=self.set_paused, alpha=cfg.get("overlay_alpha", 0.5))
+        self.overlay = CaptionOverlay(on_pause=self.set_paused, on_finalize=self.finalize,
+                                      alpha=cfg.get("overlay_alpha", 0.5))
         self.tray = Tray(self)
         self.link: HubLink | None = None
         self.paused = False
@@ -70,6 +71,17 @@ class Agent:
         self.overlay.call(lambda: self.overlay.set_paused(paused))
         if self.running:
             self.tray.set_state("paused" if paused else "connected")
+
+    def finalize(self) -> None:
+        """Ask the hub for minutes + Odoo push; runs in a thread, result shown in the status line."""
+        def work():
+            self.overlay.set_status("finalizing… (LLM may take a few minutes)")
+            r = finalize(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), self.cfg["meeting_id"])
+            if "error" in r:
+                self.overlay.set_status(f"finalize failed: {r['error']}")
+            else:
+                self.overlay.set_status(f"minutes saved ({'LLM' if r['llm'] else 'transcript'}, odoo: {r['odoo']['status']})")
+        threading.Thread(target=work, daemon=True).start()
 
     def toggle_overlay(self) -> None:
         self.overlay.call(self.overlay.hide if self.overlay.visible else self.overlay.show)

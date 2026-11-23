@@ -21,6 +21,21 @@ def speaker_url(server_ip: str, port: int, meeting_id: str, speaker: str, langua
     return f"ws://{server_ip}:{port}/ws/{meeting_id}/{quote(speaker)}?lang={language}"
 
 
+def finalize(server_ip: str, port: int, meeting_id: str, timeout: float = 600) -> dict:
+    """POST /finalize; blocking (Ollama can take minutes). Returns the hub's JSON or {"error": str}."""
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(f"http://{server_ip}:{port}/api/meetings/{meeting_id}/finalize", method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        return {"error": f"HTTP {e.code}: {e.read().decode(errors='replace')[:200]}"}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 class HubLink:
     def __init__(self, url: str, audio, on_message: Callable[[dict], None],
                  on_state: Callable[[str], None] | None = None) -> None:

@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from server.deduplicator import CrossTalkFilter
 from server.transcriber import Segment
 
 MEETING_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -66,11 +67,12 @@ def caption_frame(meeting_id: str, speaker: str, seg: Segment, clock: StreamCloc
 
 
 class MeetingRoom:
-    def __init__(self, meeting_id: str, data_dir: Path) -> None:
+    def __init__(self, meeting_id: str, data_dir: Path, dedup: CrossTalkFilter | None = None) -> None:
         self.meeting_id = meeting_id
         self.path = Path(data_dir) / f"{meeting_id}.jsonl"
         self.speakers: dict[str, Any] = {}
         self.listeners: set[Any] = set()
+        self.dedup = dedup or CrossTalkFilter()
 
     def add_speaker(self, name: str, ws: Any) -> bool:
         if name in self.speakers:

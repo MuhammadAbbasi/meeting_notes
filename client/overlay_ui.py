@@ -12,8 +12,8 @@ FONT = ("Segoe UI", 11)
 
 class CaptionOverlay:
     def __init__(self, on_pause: Callable[[bool], None], on_hide: Callable[[], None] | None = None,
-                 lines: int = 3, alpha: float = 0.5) -> None:
-        self.on_pause, self.on_hide, self.lines = on_pause, on_hide, lines
+                 on_finalize: Callable[[], None] | None = None, lines: int = 3, alpha: float = 0.5) -> None:
+        self.on_pause, self.on_hide, self.on_finalize, self.lines = on_pause, on_hide, on_finalize, lines
         self._q: queue.Queue = queue.Queue()
         self._done: list[dict] = []
         self._partials: dict[str, dict] = {}
@@ -35,6 +35,8 @@ class CaptionOverlay:
         tk.Button(bar, text="Hide", command=self.hide, **self._btn()).pack(side="right")
         self.pause_btn = tk.Button(bar, text="Pause", command=self._toggle_pause, **self._btn())
         self.pause_btn.pack(side="right", padx=4)
+        if on_finalize:
+            tk.Button(bar, text="Finalize", command=on_finalize, **self._btn()).pack(side="right", padx=4)
         for widget in (bar, self.status):
             widget.bind("<ButtonPress-1>", self._drag_start)
             widget.bind("<B1-Motion>", self._drag_move)
@@ -109,6 +111,11 @@ class CaptionOverlay:
                 self.status.configure(text=f["text"])
             elif f["type"] == "_call":
                 f["fn"]()
+            elif f["type"] == "retract":
+                self._partials.pop(f["speaker"], None)
+                changed = True
+            elif f["type"] == "finalized":
+                self.status.configure(text=f"minutes ready ({'LLM' if f['llm'] else 'transcript'}, {f['odoo_status']})")
             elif f["type"] == "caption":
                 if f["completed"]:
                     self._partials.pop(f["speaker"], None)

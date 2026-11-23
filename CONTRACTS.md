@@ -30,7 +30,12 @@ first, then the code.
     `start`/`end`: seconds from that speaker's stream start. `ts`: epoch seconds of the
     segment start = `stream_start_ts + start`. `rms`: mean RMS of the audio in
     `[start,end]` (0.0 if unknown). A `completed:false` caption replaces the previous
-    partial for that speaker; a `completed:true` caption is emitted exactly once.
+    partial for that speaker; a `completed:true` caption is emitted exactly once, after a
+    hold window of `DEDUP_HOLD_S` seconds (default 2.5) used for cross-talk suppression.
+  - `{"type":"retract","meeting_id":str,"speaker":str}` – that speaker's pending partial was
+    identified as mic bleed of another speaker; clients clear the partial. Nothing is persisted.
+  - `{"type":"finalized","meeting_id":str,"llm":bool,"odoo_status":str}` – minutes were
+    produced (M3).
   - `{"type":"error","message":str}` then close.
 
 ### 1.2 Listener (viewer) stream
@@ -44,7 +49,17 @@ sends nothing.
 - `GET /captions/{meeting_id}` → HTML viewer (live + history).
 - `GET /api/meetings/{meeting_id}/segments` → JSON list of persisted completed segments,
   each `{"speaker","text","start","end","ts","rms"}` in file order.
-- (M3) `POST /api/meetings/{meeting_id}/finalize` → `{"markdown":str,"odoo":{...}|null}`.
+- `POST /api/meetings/{meeting_id}/finalize` → 404 if no segments, else
+  `{"meeting_id":str,"markdown":str,"llm":bool,"saved_to":str,"odoo":{"status":"published"|"saved_locally",...}}`.
+  `llm:false` means Ollama was unreachable and `markdown` is the plain transcript. Minutes are
+  always written to `data/meetings/{meeting_id}.minutes.md`.
+
+### 1.5 Cross-talk suppression (hub-internal, affects 1.1)
+
+Two completed captions from *different* speakers whose absolute times (`ts`) differ by at most
+`DEDUP_WINDOW_S` (2.0) and whose normalized texts have similarity ≥ `DEDUP_SIMILARITY` (0.78),
+both with ≥ 4 words, are the same utterance heard by two mics: the one with the higher `rms`
+is emitted, the other retracted. Equal `rms` → the first to arrive wins.
 
 ### 1.4 Persistence
 

@@ -64,6 +64,7 @@ function connect() {
     const m = JSON.parse(ev.data);
     if (m.type === "roster") { roster.replaceChildren(...m.speakers.map(pill)); }
     else if (m.type === "caption") render(m);
+    else if (m.type === "retract") { const el = partials.get(m.speaker); if (el) { el.remove(); partials.delete(m.speaker); } }
   };
 }
 connect();
