@@ -43,6 +43,8 @@
   .md h2, .md h3 { text-transform:none; letter-spacing:0; color:var(--fg); font-size:16px; margin:16px 0 6px; }
   .md table { width:auto; margin:6px 0; } .md td, .md th { border:1px solid var(--line); }
   .md p { margin:4px 0; }
+  .note { border-left:3px solid var(--acc); background:var(--card); padding:8px 12px; margin:0 0 12px; font-size:13px; }
+  .note.warn { border-color:var(--warn); } .note.bad { border-color:var(--bad); }
   .seg { display:grid; grid-template-columns:130px 1fr; gap:12px; padding:5px 0; border-bottom:1px solid var(--line); }
   .seg .who { font-weight:600; } .seg .t { color:var(--muted); font-size:12px; }
   .empty { color:var(--muted); padding:20px 0; }
@@ -171,7 +173,7 @@ const fmtDate = ts => ts ? new Date(ts * 1000).toLocaleString() : "–";
 const fmtDur = (a, b) => (a && b) ? Math.max(1, Math.round((b - a) / 60)) + " min" : "–";
 const setDot = (id, ok) => { $(id).className = "dot " + (ok === null ? "" : ok ? "ok" : "bad"); };
 const say = (id, text, ok) => { const m = $(id); m.textContent = text; m.className = "msg " + (ok === undefined ? "" : ok ? "ok" : "bad"); };
-let current = null, selected = null, tab = "minutes", dirty = false;  // dirty: unsaved edits, never overwritten by refresh
+let current = null, selected = null, tab = "minutes", dirty = false, rows = [];  // dirty: unsaved edits, never overwritten by refresh
 
 // Admin password lives in sessionStorage and goes out as a Basic header on every API call; the hub answers
 // 401 without WWW-Authenticate, so the browser never shows its own login dialog.
@@ -286,7 +288,7 @@ function odooTag(m) {
 }
 
 async function loadMeetings() {
-  const rows = await api("/api/meetings");
+  rows = await api("/api/meetings");
   $("#mrows").innerHTML = rows.length ? rows.map(r => `
     <tr class="mrow ${r.meeting_id === selected ? "sel" : ""}" data-id="${esc(r.meeting_id)}">
       <td><code>${esc(r.meeting_id)}</code>${r.live ? ' <span class="tag ok">live</span>' : ""}</td>
@@ -327,11 +329,18 @@ async function showDetail() {
   $("#d-title").textContent = selected;
   $("#d-live").href = `/captions/${selected}`;
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  const row = rows.find(r => r.meeting_id === selected), m = row && row.minutes;
+  const btn = $("#d-finalize");
+  if (!btn.disabled) { btn.textContent = m ? "Re-generate minutes" : "Finalize → minutes"; btn.className = m ? "" : "primary"; }
   const body = $("#d-body");
   if (tab === "minutes") {
     const r = await fetch(`/api/meetings/${selected}/minutes`);
-    body.innerHTML = r.ok ? `<div class="md">${md(await r.text())}</div>`
-                          : `<div class="empty">Not finalized yet. Click <b>Finalize</b> to generate the minutes.</div>`;
+    let note = "";
+    if (m && m.status === "file_only") note = `<div class="note warn">Minutes file found (finalized before the history was recorded).</div>`;
+    else if (m && m.llm) note = `<div class="note">Minutes generated ${fmtDate(m.finalized_at)} by ${esc(m.llm_model || "the LLM")}${m.odoo && m.odoo.status === "published" ? ` · Odoo task #${esc(m.odoo.parent_task_id)} with ${(m.odoo.subtasks || []).length} sub-task(s)` : " · saved on the hub only (Odoo: " + esc((m.odoo && m.odoo.reason) || "not published") + ")"}</div>`;
+    else if (m) note = `<div class="note bad">Finalized ${fmtDate(m.finalized_at)} <b>without the LLM</b>: this is the plain transcript, not minutes. Reason: ${esc(m.llm_error || "Ollama unavailable")}. Fix the Ollama card above (Test), then click <i>Re-generate minutes</i>.</div>`;
+    body.innerHTML = r.ok ? note + `<div class="md">${md(await r.text())}</div>`
+                          : `<div class="empty">Not finalized yet. <b>Finalize → minutes</b> sends the transcript to the LLM, saves the minutes and publishes them to Odoo.</div>`;
   } else {
     const segs = await api(`/api/meetings/${selected}/segments`);
     body.innerHTML = segs.map(s => `<div class="seg"><div><div class="who">${esc(s.speaker)}</div><div class="t">${new Date(s.ts * 1000).toLocaleTimeString()}</div></div><div>${esc(s.text)}</div></div>`).join("") || `<div class="empty">no captions</div>`;
@@ -341,13 +350,12 @@ function select(id) { selected = id; loadMeetings(); showDetail(); $("#detail").
 document.querySelectorAll(".tab").forEach(b => b.onclick = () => { tab = b.dataset.tab; showDetail(); });
 $("#d-close").onclick = () => { selected = null; $("#detail").style.display = "none"; loadMeetings(); };
 $("#d-finalize").onclick = async () => {
-  const btn = $("#d-finalize"); btn.disabled = true; btn.textContent = "Finalizing… (LLM may take minutes)";
+  const btn = $("#d-finalize"); btn.disabled = true; btn.textContent = "Generating minutes… (LLM may take minutes)";
   try {
-    const j = await api(`/api/meetings/${selected}/finalize`, { method: "POST" });
-    btn.textContent = `done: ${j.llm ? "LLM" : "transcript"} · odoo ${j.odoo.status}`;
-    tab = "minutes"; await loadMeetings(); await showDetail();
-  } catch (e) { btn.textContent = "error: " + e.message; }
-  setTimeout(() => { btn.disabled = false; btn.textContent = "Finalize"; }, 6000);
+    await api(`/api/meetings/${selected}/finalize`, { method: "POST" });
+  } catch (e) { $("#d-body").innerHTML = `<div class="note bad">Finalize failed: ${esc(e.message)}</div>`; btn.disabled = false; return; }
+  btn.disabled = false;
+  tab = "minutes"; await loadMeetings(); await showDetail();
 };
 
 async function refresh() {

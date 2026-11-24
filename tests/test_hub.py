@@ -201,7 +201,8 @@ def test_finalize_llm_offline_falls_back(client, monkeypatch):
         ws.send_bytes(pcm(2.0))
         next_of(ws, "caption", completed=True)
     body = client.post("/api/meetings/daily/finalize").json()
-    assert body["llm"] is False
+    assert body["llm"] is False and "Ollama" in body["llm_error"]
+    assert json.loads((client.tmp / "daily.finalize.json").read_text())["llm_error"] == body["llm_error"]
     assert body["markdown"].startswith("## Transcript") and "**[Gabriele]** Gabriele segment 1" in body["markdown"]
 
 

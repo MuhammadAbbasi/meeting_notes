@@ -318,20 +318,23 @@ async def finalize(meeting_id: str) -> dict:
     segs = MeetingRoom(meeting_id, DATA_DIR).history()
     if not segs:
         raise HTTPException(404, "no completed captions for this meeting")
+    llm_error = None
     try:
         markdown = await asyncio.to_thread(synthesize, segs, meeting_id, S.get("ollama_url"), S.get("ollama_model"))
         llm = True
     except SynthesisUnavailable as e:
         log.warning("%s: %s; falling back to transcript", meeting_id, e)
-        markdown, llm = transcript_markdown(segs), False
+        markdown, llm, llm_error = transcript_markdown(segs), False, str(e)
     participants = sorted({s["speaker"] for s in segs})
     odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR)
     (DATA_DIR / f"{meeting_id}.finalize.json").write_text(
-        json.dumps({"finalized_at": time.time(), "llm": llm, "odoo": odoo}), encoding="utf-8")
+        json.dumps({"finalized_at": time.time(), "llm": llm, "llm_model": S.get("ollama_model"), "llm_error": llm_error,
+                    "odoo": odoo}), encoding="utf-8")
     if meeting_id in rooms:
         await rooms[meeting_id].broadcast({"type": "finalized", "meeting_id": meeting_id, "llm": llm,
                                            "odoo_status": odoo["status"]})
-    return {"meeting_id": meeting_id, "markdown": markdown, "llm": llm, "saved_to": odoo["path"], "odoo": odoo}
+    return {"meeting_id": meeting_id, "markdown": markdown, "llm": llm, "llm_error": llm_error,
+            "saved_to": odoo["path"], "odoo": odoo}
 
 
 # --- live streams -------------------------------------------------------------------------------
