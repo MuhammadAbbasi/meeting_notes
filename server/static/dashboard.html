@@ -48,6 +48,10 @@
   .empty { color:var(--muted); padding:20px 0; }
   ol.steps { margin:6px 0 0; padding-left:20px; font-size:13px; } ol.steps li { margin:3px 0; }
   code { font-size:12px; }
+  #login { position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center; z-index:9; }
+  #login form { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:22px 26px; width:320px; }
+  #login h2 { margin:0 0 12px; }
+  #login input { margin:6px 0 10px; }
 </style>
 </head>
 <body>
@@ -56,6 +60,14 @@
   <span class="muted" id="health">loading…</span>
   <nav><a href="#settings">settings</a><a href="#agent">agent</a><a href="#meetings">meetings</a><a href="/health">/health</a></nav>
 </header>
+<div id="login">
+  <form id="login-form">
+    <h2>Caption hub · admin</h2>
+    <label style="display:block">password<input id="pw" type="password" autocomplete="current-password" autofocus></label>
+    <button type="submit" class="primary">Log in</button>
+    <span class="msg bad" id="login-msg" style="margin-left:10px"></span>
+  </form>
+</div>
 <main>
   <h2 id="settings">Settings <span class="muted" style="text-transform:none;letter-spacing:0">· apply to every workstation as soon as you save</span></h2>
   <form id="form" onsubmit="return false">
@@ -161,9 +173,24 @@ const setDot = (id, ok) => { $(id).className = "dot " + (ok === null ? "" : ok ?
 const say = (id, text, ok) => { const m = $(id); m.textContent = text; m.className = "msg " + (ok === undefined ? "" : ok ? "ok" : "bad"); };
 let current = null, selected = null, tab = "minutes", dirty = false;  // dirty: unsaved edits, never overwritten by refresh
 
+// Admin password lives in sessionStorage and goes out as a Basic header on every API call; the hub answers
+// 401 without WWW-Authenticate, so the browser never shows its own login dialog.
+let token = sessionStorage.getItem("hubauth") || "";
+const auth = () => token ? { Authorization: "Basic " + token } : {};
+function login(msg) { $("#login").style.display = "flex"; $("#login-msg").textContent = msg || ""; $("#pw").focus(); }
+$("#login-form").onsubmit = e => {
+  e.preventDefault();
+  token = btoa("admin:" + $("#pw").value); sessionStorage.setItem("hubauth", token); $("#pw").value = "";
+  $("#login").style.display = "none"; refresh();
+};
 const api = async (url, opt = {}) => {
-  const r = await fetch(url, { headers: { "Content-Type": "application/json" }, ...opt });
+  const r = await fetch(url, { ...opt, headers: { "Content-Type": "application/json", ...auth(), ...(opt.headers || {}) } });
   const j = await r.json().catch(() => ({}));
+  if (r.status === 401 || r.status === 403) {
+    login(r.status === 403 ? j.detail : (token ? "wrong password" : ""));
+    if (r.status === 401) { token = ""; sessionStorage.removeItem("hubauth"); }
+    throw new Error(j.detail || "login required");
+  }
   if (!r.ok) throw new Error(j.detail || r.status);
   return j;
 };
@@ -239,7 +266,7 @@ async function upload() {
   if (!f) return say("#msg-upload", "choose OfficeMeetingAgent.exe first", false);
   say("#msg-upload", `uploading ${(f.size / 1048576).toFixed(1)} MB…`);
   try {
-    const r = await fetch("/api/agent/exe", { method: "PUT", body: f });
+    const r = await fetch("/api/agent/exe", { method: "PUT", body: f, headers: auth() });
     if (!r.ok) throw new Error((await r.json()).detail || r.status);
     say("#msg-upload", "published", true); await loadSettings();
   } catch (e) { say("#msg-upload", "failed: " + e.message, false); }
@@ -330,8 +357,8 @@ async function refresh() {
     await Promise.all([loadSettings(), loadMeetings()]);
   } catch (e) { $("#health").textContent = "hub unreachable: " + e.message; }
 }
-refresh();
-setInterval(refresh, 20000);
+if (token) refresh(); else { login(); api("/health").then(loadMeetings).catch(() => {}); }
+setInterval(() => { if (token) refresh(); }, 20000);
 </script>
 </body>
 </html>

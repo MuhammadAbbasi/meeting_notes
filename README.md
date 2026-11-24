@@ -49,7 +49,7 @@ Check `http://<hub-ip>:8085/dashboard`: all three cards should be green.
 
 ### Admin dashboard
 
-`http://<hub-ip>:8085/dashboard`, any username + the `ADMIN_PASSWORD` from `.env`. It is the
+`http://<hub-ip>:8085/dashboard`, log in with the `ADMIN_PASSWORD` from `.env` (own login form, kept for the browser session). It is the
 place to configure the system after the first start; `.env` only provides first-run defaults.
 
 - **Settings**, saved in `data/settings.json` and applied to every workstation the moment you

@@ -43,15 +43,17 @@ app = FastAPI(title="caption-hub")
 S = Settings(SETTINGS_FILE)
 rooms: dict[str, MeetingRoom] = {}
 _pending: set[asyncio.Task] = set()  # keeps hold-window tasks alive
-_basic = HTTPBasic(realm="caption-hub admin")
+_basic = HTTPBasic(auto_error=False)  # no WWW-Authenticate: the page has its own login form, browsers never prompt
 
 
-def admin(cred: HTTPBasicCredentials = Depends(_basic)) -> None:
-    """HTTP Basic auth for the dashboard and every write endpoint; any username, ADMIN_PASSWORD as password."""
+def admin(cred: HTTPBasicCredentials | None = Depends(_basic)) -> None:
+    """HTTP Basic credentials on every admin API call; any username, ADMIN_PASSWORD as password."""
     if not ADMIN_PASSWORD:
         raise HTTPException(403, "admin disabled: set ADMIN_PASSWORD on the hub")
+    if cred is None:
+        raise HTTPException(401, "login required")
     if not secrets.compare_digest(cred.password.encode(), ADMIN_PASSWORD.encode()):
-        raise HTTPException(401, "wrong password", headers={"WWW-Authenticate": "Basic"})
+        raise HTTPException(401, "wrong password")
 
 
 def odoo_client(**overrides) -> OdooMeetingClient:
@@ -117,7 +119,7 @@ async def viewer(meeting_id: str) -> str:
     return VIEWER_HTML.replace("__MEETING_ID__", _valid_id(meeting_id))
 
 
-@app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(admin)])
+@app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard() -> str:
     return DASHBOARD_HTML
 

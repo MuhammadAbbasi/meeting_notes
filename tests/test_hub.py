@@ -215,10 +215,12 @@ AUTH = ("admin", "pw")
 
 def test_admin_requires_password(client):
     assert client.get("/", follow_redirects=False).headers["location"] == "/dashboard"
-    assert client.get("/dashboard").status_code == 401
+    assert "Log in" in client.get("/dashboard").text  # page is public, data is not
+    r = client.get("/api/settings")
+    assert r.status_code == 401 and "www-authenticate" not in r.headers  # no browser auth dialog
     assert client.get("/api/settings", auth=("x", "wrong")).status_code == 401
     assert client.put("/api/settings", json={}).status_code == 401
-    assert "Settings" in client.get("/dashboard", auth=AUTH).text
+    assert client.get("/api/settings", auth=AUTH).status_code == 200
 
 
 def test_settings_masks_secrets_and_reports_reachability(monkeypatch, tmp_path):
