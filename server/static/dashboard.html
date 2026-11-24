@@ -3,180 +3,276 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Caption hub · admin</title>
+<title>Meeting captions · office hub</title>
 <style>
-  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --muted:#777; --line:#e5e5e5; --card:#fafafa; --ok:#2e9e5b; --bad:#d9433b; --warn:#d9a21b; --acc:#2f6fed; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#888; --line:#2a2a2a; --card:#181818; } }
-  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui, sans-serif; }
-  header { display:flex; gap:14px; align-items:baseline; padding:12px 24px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:2; }
-  header h1 { font-size:17px; margin:0; font-weight:600; }
-  header .muted { color:var(--muted); font-size:13px; }
-  header nav { margin-left:auto; display:flex; gap:14px; font-size:13px; }
-  main { max-width:1200px; margin:0 auto; padding:16px 24px 80px; }
-  h2 { font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:26px 0 10px; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
-  .card h3 { margin:0 0 10px; font-size:14px; display:flex; align-items:center; gap:8px; }
-  .card h3 .sp { margin-left:auto; font-weight:400; font-size:12px; color:var(--muted); }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); display:inline-block; flex:none; }
-  .dot.ok { background:var(--ok); } .dot.bad { background:var(--bad); } .dot.warn { background:var(--warn); }
-  label { display:grid; grid-template-columns:120px 1fr; gap:4px 10px; align-items:center; font-size:13px; color:var(--muted); margin:5px 0; }
-  input, select, textarea { font:inherit; font-size:13px; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:5px 8px; width:100%; box-sizing:border-box; }
-  textarea { font-family:ui-monospace, monospace; min-height:58px; }
-  .hint { font-size:12px; color:var(--muted); margin:4px 0 0 130px; }
-  .row { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
-  .msg { font-size:12px; color:var(--muted); } .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); }
-  button { font:inherit; font-size:13px; padding:5px 11px; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
-  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
-  button:disabled { opacity:.5; cursor:default; }
-  #savebar { position:sticky; bottom:0; background:var(--bg); border-top:1px solid var(--line); padding:10px 0; display:flex; gap:10px; align-items:center; margin-top:12px; }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { color:var(--muted); font-weight:500; font-size:12px; }
-  tr.mrow { cursor:pointer; } tr.mrow:hover, tr.sel { background:var(--card); }
-  .tag { border-radius:999px; padding:1px 9px; font-size:12px; background:var(--line); white-space:nowrap; }
-  .tag.ok { background:var(--ok); color:#fff; } .tag.bad { background:var(--bad); color:#fff; } .tag.warn { background:var(--warn); color:#fff; }
-  #detail { margin-top:18px; border:1px solid var(--line); border-radius:10px; padding:14px 18px; display:none; }
-  #detail .bar { display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
-  #detail .bar b { margin-right:auto; }
-  .tab.on { background:var(--fg); color:var(--bg); }
-  .md h2, .md h3 { text-transform:none; letter-spacing:0; color:var(--fg); font-size:16px; margin:16px 0 6px; }
-  .md table { width:auto; margin:6px 0; } .md td, .md th { border:1px solid var(--line); }
-  .md p { margin:4px 0; }
-  .note { border-left:3px solid var(--acc); background:var(--card); padding:8px 12px; margin:0 0 12px; font-size:13px; }
+  :root {
+    color-scheme: light dark;
+    --bg:#F2F4F6; --surface:#FFFFFF; --ink:#17212B; --muted:#5C6773; --line:#D9DEE3;
+    --action:#1D5EC0; --action-ink:#FFFFFF; --ok:#1E8A58; --warn:#B9780F; --bad:#C23B33;
+    --ok-bg:#E6F4EC; --warn-bg:#FBF1DC; --bad-bg:#FBE7E5; --soft:#E9EDF1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161A1F; --surface:#1F252C; --ink:#EDF0F3; --muted:#9AA5B1; --line:#343C46;
+            --action:#4D8BE8; --ok:#4FBF86; --warn:#E0A33A; --bad:#E8675E;
+            --ok-bg:#1E3328; --warn-bg:#3A2F17; --bad-bg:#3D2321; --soft:#2A313A; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  h1, h2, h3, .status-line { font-family:"Bahnschrift", "Segoe UI", system-ui, sans-serif; font-weight:600; letter-spacing:-0.01em; }
+  a { color:var(--action); }
+  code { font:13px ui-monospace, Consolas, monospace; background:var(--soft); padding:1px 5px; border-radius:4px; }
+
+  header { background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header .inner { max-width:920px; margin:0 auto; padding:0 24px; display:flex; align-items:center; gap:28px; height:56px; }
+  header h1 { font-size:17px; margin:0; white-space:nowrap; }
+  nav { display:flex; gap:4px; }
+  nav a { color:var(--muted); text-decoration:none; padding:17px 12px 15px; border-bottom:2px solid transparent; font-weight:500; }
+  nav a.on { color:var(--ink); border-color:var(--action); }
+  header .right { margin-left:auto; display:flex; gap:14px; align-items:center; font-size:13px; color:var(--muted); }
+  header .right button { font-size:13px; }
+
+  main { max-width:920px; margin:0 auto; padding:28px 24px 96px; }
+  .view { display:none; } .view.on { display:block; }
+  h2 { font-size:22px; margin:0 0 6px; }
+  h3 { font-size:17px; margin:0 0 4px; }
+  p.lead { color:var(--muted); margin:0 0 20px; max-width:62ch; }
+  section + section { margin-top:40px; }
+
+  /* overview */
+  .status-line { font-size:34px; line-height:1.15; margin:8px 0 22px; max-width:22ch; }
+  .status-line.bad { color:var(--bad); } .status-line.warn { color:var(--warn); }
+  .services { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:28px; }
+  .service { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
+  .service .name { font-weight:600; display:flex; align-items:center; gap:8px; }
+  .service .detail { color:var(--muted); font-size:13px; margin-top:3px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--muted); flex:none; display:inline-block; }
+  .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.bad { background:var(--bad); }
+  .issues { list-style:none; margin:0; padding:0; }
+  .issues li { background:var(--surface); border-left:4px solid var(--warn); border-radius:0 8px 8px 0; padding:12px 16px; margin-bottom:10px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .issues li.bad { border-color:var(--bad); }
+  .issues li .text { flex:1 1 320px; }
+  .issues li .text b { display:block; }
+  .issues li .text span { color:var(--muted); font-size:14px; }
+
+  /* buttons & forms */
+  button { font:inherit; font-size:14px; padding:7px 14px; border-radius:6px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--action); border-color:var(--action); color:var(--action-ink); font-weight:600; }
+  button.quiet { background:transparent; border-color:transparent; color:var(--action); padding-left:6px; padding-right:6px; }
+  button:disabled { opacity:.55; cursor:default; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline:2px solid var(--action); outline-offset:2px; }
+  .field { display:grid; grid-template-columns:200px 1fr; gap:4px 16px; align-items:center; margin:10px 0; }
+  .field > span { color:var(--muted); font-size:14px; }
+  .field .help { grid-column:2; color:var(--muted); font-size:13px; margin-top:-2px; }
+  input, select, textarea { font:inherit; font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:7px 10px; width:100%; max-width:520px; }
+  textarea { font-family:ui-monospace, Consolas, monospace; min-height:64px; }
+  .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+  .msg { font-size:14px; color:var(--muted); }
+  .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); }
+  .block { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:20px 22px; }
+  .block + .block { margin-top:16px; }
+  .block h3 { display:flex; align-items:center; gap:10px; }
+  .block h3 .state { margin-left:auto; font-family:"Segoe UI", system-ui, sans-serif; font-weight:500; font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+  .block p { color:var(--muted); margin:0 0 10px; max-width:70ch; font-size:14px; }
+  #savebar { position:sticky; bottom:0; background:var(--bg); border-top:1px solid var(--line); padding:12px 0; margin-top:20px; display:flex; gap:10px; align-items:center; }
+  @media (max-width:640px) { .field { grid-template-columns:1fr; } .field .help { grid-column:1; } header .inner { gap:14px; } nav a { padding:17px 8px 15px; } }
+
+  /* meetings */
+  .mlist { list-style:none; margin:0; padding:0; }
+  .mlist li { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:14px 18px; margin-bottom:10px; display:grid; grid-template-columns:1fr auto; gap:4px 16px; align-items:center; cursor:pointer; }
+  .mlist li:hover { border-color:var(--action); }
+  .mlist .title { font-weight:600; font-size:16px; grid-column:1; grid-row:1; }
+  .mlist .meta { color:var(--muted); font-size:14px; grid-column:1; grid-row:2; }
+  .mlist .state { grid-column:2; grid-row:1 / span 2; text-align:right; font-size:14px; }
+  .chip { display:inline-block; border-radius:999px; padding:2px 10px; font-size:13px; background:var(--soft); white-space:nowrap; }
+  .chip.ok { background:var(--ok-bg); color:var(--ok); } .chip.warn { background:var(--warn-bg); color:var(--warn); } .chip.bad { background:var(--bad-bg); color:var(--bad); }
+  .chip.live { background:var(--ok); color:#fff; }
+  .detail-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+  .detail-bar h2 { margin:0; margin-right:auto; }
+  .tabs { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .tabs button { border:0; border-radius:0; } .tabs button.on { background:var(--ink); color:var(--bg); }
+  .note { border-left:4px solid var(--action); background:var(--surface); padding:10px 14px; margin:0 0 16px; border-radius:0 8px 8px 0; font-size:14px; }
   .note.warn { border-color:var(--warn); } .note.bad { border-color:var(--bad); }
-  .seg { display:grid; grid-template-columns:130px 1fr; gap:12px; padding:5px 0; border-bottom:1px solid var(--line); }
+  .md { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:8px 24px 20px; max-width:78ch; }
+  .md h2, .md h3 { font-family:"Segoe UI", system-ui, sans-serif; font-size:16px; margin:18px 0 6px; }
+  .md table { border-collapse:collapse; margin:6px 0; } .md td, .md th { border:1px solid var(--line); padding:4px 10px; text-align:left; font-size:14px; }
+  .md p { margin:4px 0; }
+  .seg { display:grid; grid-template-columns:130px 1fr; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); max-width:78ch; }
   .seg .who { font-weight:600; } .seg .t { color:var(--muted); font-size:12px; }
-  .empty { color:var(--muted); padding:20px 0; }
-  ol.steps { margin:6px 0 0; padding-left:20px; font-size:13px; } ol.steps li { margin:3px 0; }
-  code { font-size:12px; }
-  #login { position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center; z-index:9; }
-  #login form { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:22px 26px; width:320px; }
-  #login h2 { margin:0 0 12px; }
-  #login input { margin:6px 0 10px; }
+  .empty { color:var(--muted); padding:24px 0; }
+
+  /* install */
+  .steps { counter-reset:step; list-style:none; margin:0; padding:0; }
+  .steps li { counter-increment:step; display:grid; grid-template-columns:36px 1fr; gap:14px; padding:14px 0; border-bottom:1px solid var(--line); }
+  .steps li > * { grid-column:2; }
+  .steps li::before { content:counter(step); grid-column:1; grid-row:1 / span 2; font-family:"Bahnschrift", "Segoe UI", sans-serif; font-size:22px; color:var(--action); line-height:1.2; }
+  .steps li b { display:block; margin-bottom:2px; }
+  .steps li span { color:var(--muted); font-size:14px; }
+  .downloads { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 4px; }
+  .downloads a { display:inline-block; padding:9px 16px; border-radius:6px; background:var(--action); color:#fff; text-decoration:none; font-weight:600; }
+  .downloads a.second { background:var(--surface); color:var(--ink); border:1px solid var(--line); }
+  details summary { cursor:pointer; color:var(--action); font-size:14px; }
+
+  /* login */
+  #login { position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center; z-index:9; padding:20px; }
+  #login form { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:28px 30px; width:360px; }
+  #login h2 { margin:0 0 4px; } #login p { margin:0 0 16px; }
+  #login input { max-width:none; margin:4px 0 12px; }
+  @media (prefers-reduced-motion: no-preference) { .view.on { animation:in .18s ease-out; } @keyframes in { from { opacity:0; transform:translateY(4px); } } }
 </style>
 </head>
 <body>
-<header>
-  <h1>Caption hub · admin</h1>
-  <span class="muted" id="health">loading…</span>
-  <nav><a href="#settings">settings</a><a href="#agent">agent</a><a href="#meetings">meetings</a><a href="/health">/health</a></nav>
-</header>
 <div id="login">
   <form id="login-form">
-    <h2>Caption hub · admin</h2>
-    <label style="display:block">password<input id="pw" type="password" autocomplete="current-password" autofocus></label>
-    <button type="submit" class="primary">Log in</button>
-    <span class="msg bad" id="login-msg" style="margin-left:10px"></span>
+    <h2>Meeting captions</h2>
+    <p class="lead">Office hub administration. Enter the hub password to continue.</p>
+    <label>Password<input id="pw" type="password" autocomplete="current-password" autofocus></label>
+    <div class="actions"><button type="submit" class="primary">Log in</button><span class="msg bad" id="login-msg"></span></div>
   </form>
 </div>
+
+<header><div class="inner">
+  <h1>Meeting captions</h1>
+  <nav>
+    <a href="#overview" data-view="overview">Overview</a>
+    <a href="#meetings" data-view="meetings">Meetings</a>
+    <a href="#settings" data-view="settings">Settings</a>
+    <a href="#install" data-view="install">Install the agent</a>
+  </nav>
+  <div class="right"><span id="health"></span><button class="quiet" id="logout">Log out</button></div>
+</div></header>
+
 <main>
-  <h2 id="settings">Settings <span class="muted" style="text-transform:none;letter-spacing:0">· apply to every workstation as soon as you save</span></h2>
-  <form id="form" onsubmit="return false">
-  <div class="cards">
-    <div class="card">
-      <h3><span class="dot" id="dot-tr"></span>Transcriber (WhisperLive)<span class="sp" id="sp-tr"></span></h3>
-      <label>mode <select name="transcriber"><option value="whisperlive">whisperlive (GPU)</option><option value="mock">mock (test, no GPU)</option></select></label>
-      <label>url <input name="whisperlive_url"></label>
-      <label>Whisper model <input name="whisper_model" list="whisper-models"></label>
-      <datalist id="whisper-models">
-        <option value="deepdml/faster-whisper-large-v3-turbo-ct2">turbo: fast, good (default)</option>
-        <option value="Systran/faster-whisper-large-v3">large-v3: best accuracy, ~3× slower</option>
-        <option value="Systran/faster-whisper-medium">medium: small GPUs</option>
-        <option value="Systran/faster-whisper-small">small: CPU-class</option>
-      </datalist>
-      <div class="hint">Hugging Face id with a “/”. Saving a different model restarts WhisperLive (≈1 min, plus the download the first time).</div>
-      <div class="row"><button type="button" onclick="testConn('whisperlive')">Test</button><button type="button" onclick="restartWL()">Restart WhisperLive</button><span class="msg" id="msg-whisperlive"></span></div>
-    </div>
+  <!-- Overview -->
+  <section class="view" id="view-overview">
+    <div class="status-line" id="status-line">Checking the hub…</div>
+    <div class="services" id="services"></div>
+    <h3>Needs attention</h3>
+    <ul class="issues" id="issues"></ul>
+    <section>
+      <h3>Recent meetings</h3>
+      <ul class="mlist" id="recent"></ul>
+      <a href="#meetings">All meetings</a>
+    </section>
+  </section>
 
-    <div class="card">
-      <h3><span class="dot" id="dot-llm"></span>Minutes LLM (Ollama)<span class="sp" id="sp-llm"></span></h3>
-      <label>url <input name="ollama_url"></label>
-      <label>model <input name="ollama_model" list="ollama-models"></label>
-      <datalist id="ollama-models"></datalist>
-      <div class="hint" id="llm-hint"></div>
-      <div class="row"><button type="button" onclick="testConn('ollama')">Test</button><span class="msg" id="msg-ollama"></span></div>
-    </div>
+  <!-- Meetings -->
+  <section class="view" id="view-meetings">
+    <h2>Meetings</h2>
+    <p class="lead">Every meeting that produced captions. Open one to read its minutes or everything that was said.</p>
+    <ul class="mlist" id="mrows"></ul>
+  </section>
 
-    <div class="card">
-      <h3><span class="dot" id="dot-odoo"></span>Odoo 18<span class="sp" id="sp-odoo"></span></h3>
-      <label>url <input name="odoo_url" placeholder="http://host.docker.internal:8069"></label>
-      <label>database <input name="odoo_db"></label>
-      <label>user (login) <input name="odoo_user" placeholder="admin or email"></label>
-      <label>API key <input name="odoo_api_key" type="password" autocomplete="new-password"></label>
-      <label>project id <input name="odoo_project_id" type="number" min="1" placeholder="project.project id for the tasks"></label>
-      <label>speaker aliases <textarea name="speaker_aliases" placeholder='{"Ginadomenico": "Gian Domenico Bianchi"}'></textarea></label>
-      <div class="hint">Caption name → Odoo user name, JSON. Needed only when a colleague's agent name differs from their Odoo name. Leave everything empty to only save minutes locally.</div>
-      <div class="row"><button type="button" onclick="testConn('odoo')">Test login</button><span class="msg" id="msg-odoo"></span></div>
-    </div>
-
-    <div class="card">
-      <h3><span class="dot"></span>Cross-talk &amp; workstation defaults</h3>
-      <label>hold (s) <input name="dedup_hold_s" type="number" step="0.1" min="0"></label>
-      <label>window (s) <input name="dedup_window_s" type="number" step="0.1" min="0"></label>
-      <label>similarity <input name="dedup_similarity" type="number" step="0.01" min="0" max="1"></label>
-      <div class="hint">Two mics hearing the same sentence within <i>window</i> seconds with text similarity ≥ <i>similarity</i>: the quieter one is dropped. Captions are delayed by <i>hold</i>. 0 disables.</div>
-      <label>default meeting <input name="default_meeting" pattern="[A-Za-z0-9_-]{1,64}"></label>
-      <label>default language <input name="default_language" list="langs"></label>
-      <datalist id="langs"><option value="auto"><option value="it"><option value="en"><option value="de"><option value="fr"><option value="es"></datalist>
-      <div class="hint">Pre-filled in <code>config.json</code> downloaded by new PCs. Each person can still change them in the setup form.</div>
-    </div>
-  </div>
-  <div id="savebar">
-    <button type="button" class="primary" id="btn-save" onclick="saveSettings()">Save settings</button>
-    <button type="button" onclick="fill(); say('#msg-save', '')">Discard changes</button>
-    <span class="msg" id="msg-save"></span>
-  </div>
-  </form>
-
-  <h2 id="agent">Workstation agent</h2>
-  <div class="cards">
-    <div class="card">
-      <h3><span class="dot" id="dot-agent"></span>Download for a new PC<span class="sp" id="sp-agent"></span></h3>
-      <div id="agent-info" class="muted" style="font-size:13px"></div>
-      <ol class="steps">
-        <li>On the new PC, create a folder (e.g. <code>C:\MeetingAgent</code>) and save both files in it:
-          <a id="dl-exe" href="/download/OfficeMeetingAgent.exe">OfficeMeetingAgent.exe</a> ·
-          <a href="/download/config.json" download="config.json">config.json</a> (pre-filled with this hub)</li>
-        <li>Run the <code>.exe</code>; it asks only for the person's name, then shows the caption strip and a tray icon.</li>
-        <li>Optional: right-click the tray icon → <i>Start with Windows</i> is not built in; put a shortcut in <code>shell:startup</code>.</li>
-      </ol>
-    </div>
-    <div class="card">
-      <h3><span class="dot"></span>Publish a new build</h3>
-      <div class="muted" style="font-size:13px">Build on any Windows PC with Python 3.11/3.12: <code>client\build_exe.bat</code> → <code>client\dist\OfficeMeetingAgent.exe</code>, then upload it here. Everyone downloads this copy.</div>
-      <div class="row"><input type="file" id="exe" accept=".exe" style="width:auto"><button type="button" onclick="upload()">Upload</button><span class="msg" id="msg-upload"></span></div>
-    </div>
-  </div>
-
-  <h2 id="meetings">Meetings</h2>
-  <table>
-    <thead><tr><th>Meeting</th><th>Date</th><th>Duration</th><th>Speakers</th><th>Captions</th><th>Minutes</th><th>Odoo</th><th></th></tr></thead>
-    <tbody id="mrows"><tr><td colspan="8" class="empty">loading…</td></tr></tbody>
-  </table>
-  <section id="detail">
-    <div class="bar">
-      <b id="d-title"></b>
-      <button class="tab on" data-tab="minutes">Minutes</button>
-      <button class="tab" data-tab="transcript">Transcript</button>
-      <a id="d-live" target="_blank">live captions ↗</a>
-      <button id="d-finalize">Finalize</button>
-      <button id="d-close">✕</button>
+  <!-- Meeting detail -->
+  <section class="view" id="view-meeting">
+    <a href="#meetings">‹ All meetings</a>
+    <div class="detail-bar" style="margin-top:8px">
+      <h2 id="d-title"></h2>
+      <div class="tabs"><button class="tab on" data-tab="minutes">Minutes</button><button class="tab" data-tab="transcript">What was said</button></div>
+      <a id="d-live" target="_blank">Live captions page</a>
+      <button id="d-finalize" class="primary">Write minutes</button>
     </div>
     <div id="d-body"></div>
   </section>
+
+  <!-- Settings -->
+  <section class="view" id="view-settings">
+    <h2>Settings</h2>
+    <p class="lead">Changes apply to every workstation as soon as you save. Use “Check connection” to try values before saving.</p>
+    <form id="form" onsubmit="return false">
+      <div class="block">
+        <h3>Speech recognition <span class="state" id="st-tr"></span></h3>
+        <p>Turns everyone's microphone audio into captions. Runs on the hub's GPU (WhisperLive).</p>
+        <label class="field"><span>Mode</span><select name="transcriber"><option value="whisperlive">Normal (GPU, WhisperLive)</option><option value="mock">Test mode, no GPU (scripted captions)</option></select></label>
+        <label class="field"><span>WhisperLive address</span><input name="whisperlive_url"></label>
+        <label class="field"><span>Speech model</span><input name="whisper_model" list="whisper-models"><span class="help">A Hugging Face id with a “/”. Saving a different model restarts speech recognition; the first use downloads it (minutes).</span></label>
+        <datalist id="whisper-models">
+          <option value="deepdml/faster-whisper-large-v3-turbo-ct2">fast and accurate (default)</option>
+          <option value="Systran/faster-whisper-large-v3">most accurate, about 3× slower</option>
+          <option value="Systran/faster-whisper-medium">for smaller GPUs</option>
+        </datalist>
+        <div class="actions"><button type="button" onclick="checkConn('whisperlive')">Check connection</button><button type="button" onclick="restartWL()">Restart speech recognition</button><span class="msg" id="msg-whisperlive"></span></div>
+      </div>
+
+      <div class="block">
+        <h3>Minutes writer <span class="state" id="st-llm"></span></h3>
+        <p>The language model that turns a transcript into minutes with decisions and action items. Uses the Ollama already running on the server.</p>
+        <label class="field"><span>Ollama address</span><input name="ollama_url"></label>
+        <label class="field"><span>Model</span><input name="ollama_model" list="ollama-models"><span class="help" id="llm-hint"></span></label>
+        <datalist id="ollama-models"></datalist>
+        <div class="actions"><button type="button" onclick="checkConn('ollama')">Check connection</button><span class="msg" id="msg-ollama"></span></div>
+      </div>
+
+      <div class="block">
+        <h3>Odoo <span class="state" id="st-odoo"></span></h3>
+        <p>Where the minutes are published: one task per meeting, plus a sub-task per action item assigned to its owner. Leave empty to only keep the minutes on the hub.</p>
+        <label class="field"><span>Odoo address</span><input name="odoo_url" placeholder="http://host.docker.internal:8069"></label>
+        <label class="field"><span>Database</span><input name="odoo_db"></label>
+        <label class="field"><span>User</span><input name="odoo_user" placeholder="login or e-mail"></label>
+        <label class="field"><span>API key</span><input name="odoo_api_key" type="password" autocomplete="new-password"><span class="help">Created in Odoo under Preferences, Account security. Never shown again here.</span></label>
+        <label class="field"><span>Project</span><input name="odoo_project_id" type="number" min="1" placeholder="project id, from the URL in Odoo"></label>
+        <label class="field"><span>Name mapping</span><textarea name="speaker_aliases" placeholder='{"Ginadomenico": "Gian Domenico Bianchi"}'></textarea><span class="help">Only when a colleague's name in the agent differs from their name in Odoo. JSON, agent name on the left.</span></label>
+        <div class="actions"><button type="button" onclick="checkConn('odoo')">Check login</button><span class="msg" id="msg-odoo"></span></div>
+      </div>
+
+      <div class="block">
+        <h3>Captions</h3>
+        <p>When two PCs in the same room hear the same sentence, only the louder microphone's caption is kept.</p>
+        <label class="field"><span>Delay before showing (s)</span><input name="dedup_hold_s" type="number" step="0.1" min="0"><span class="help">How long a finished sentence waits for a possible duplicate. 0 shows captions immediately and disables the check.</span></label>
+        <label class="field"><span>Same sentence within (s)</span><input name="dedup_window_s" type="number" step="0.1" min="0"></label>
+        <label class="field"><span>Similarity needed</span><input name="dedup_similarity" type="number" step="0.01" min="0" max="1"><span class="help">0.78 tolerates recognition differences between the two microphones.</span></label>
+      </div>
+
+      <div class="block">
+        <h3>Defaults for new PCs</h3>
+        <p>Pre-filled in the configuration that new PCs download. Each person can still change them.</p>
+        <label class="field"><span>Meeting name</span><input name="default_meeting" pattern="[A-Za-z0-9_-]{1,64}"><span class="help">Everyone using the same meeting name sees each other's captions. Letters, digits, - and _.</span></label>
+        <label class="field"><span>Language</span><input name="default_language" list="langs"><span class="help">“auto” detects the language per sentence.</span></label>
+        <datalist id="langs"><option value="auto"><option value="it"><option value="en"><option value="de"><option value="fr"><option value="es"></datalist>
+      </div>
+      <div id="savebar">
+        <button type="button" class="primary" id="btn-save" onclick="saveSettings()">Save changes</button>
+        <button type="button" onclick="fill(); say('#msg-save', '')">Discard</button>
+        <span class="msg" id="msg-save"></span>
+      </div>
+    </form>
+  </section>
+
+  <!-- Install -->
+  <section class="view" id="view-install">
+    <h2>Install the agent on a PC</h2>
+    <p class="lead">The agent streams the microphone to this hub and shows the captions. Takes about a minute per PC.</p>
+    <div class="block">
+      <div id="agent-info" class="msg" style="margin-bottom:6px"></div>
+      <div class="downloads">
+        <a href="/download/OfficeMeetingAgent.exe" id="dl-exe">Download OfficeMeetingAgent.exe</a>
+        <a href="/download/config.json" download="config.json" class="second">Download config.json</a>
+      </div>
+      <ol class="steps">
+        <li><b>Create a folder on the PC, for example <code>C:\MeetingAgent</code></b><span>Save both files into it. config.json already contains this hub's address and the default meeting.</span></li>
+        <li><b>Start OfficeMeetingAgent.exe</b><span>Windows may warn that the publisher is unknown: choose “More info”, then “Run anyway”. The agent asks for the person's name as it should appear in captions.</span></li>
+        <li><b>Use the caption strip and the tray icon</b><span>The strip sits bottom-right, half transparent, and can be dragged or hidden. The tray icon pauses or stops streaming, changes meeting, and writes the minutes at the end.</span></li>
+      </ol>
+    </div>
+    <div class="block">
+      <h3>For maintainers</h3>
+      <p>Needed only when the agent's code changes. The agent is built on a Windows PC with Python 3.11 or 3.12 (<code>client\build_exe.bat</code>) and uploaded here; every PC downloads this one copy.</p>
+      <details><summary>Upload a new OfficeMeetingAgent.exe</summary>
+        <div class="actions"><input type="file" id="exe" accept=".exe" style="width:auto"><button type="button" onclick="upload()">Upload</button><span class="msg" id="msg-upload"></span></div>
+      </details>
+    </div>
+  </section>
 </main>
+
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const fmtDate = ts => ts ? new Date(ts * 1000).toLocaleString() : "–";
-const fmtDur = (a, b) => (a && b) ? Math.max(1, Math.round((b - a) / 60)) + " min" : "–";
-const setDot = (id, ok) => { $(id).className = "dot " + (ok === null ? "" : ok ? "ok" : "bad"); };
+const fmtDate = ts => ts ? new Date(ts * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+const fmtDur = (a, b) => { if (!a || !b) return ""; const m = Math.max(1, Math.round((b - a) / 60)); return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? " " + m % 60 + " min" : ""}` : `${m} min`; };
 const say = (id, text, ok) => { const m = $(id); m.textContent = text; m.className = "msg " + (ok === undefined ? "" : ok ? "ok" : "bad"); };
-let current = null, selected = null, tab = "minutes", dirty = false, rows = [];  // dirty: unsaved edits, never overwritten by refresh
+const dotHtml = s => `<span class="dot ${s}"></span>`;
+let current = null, rows = [], selected = null, tab = "minutes", dirty = false;
 
-// Admin password lives in sessionStorage and goes out as a Basic header on every API call; the hub answers
-// 401 without WWW-Authenticate, so the browser never shows its own login dialog.
+// ---- auth: password kept for the browser session, sent on every admin call; no browser dialog ever
 let token = sessionStorage.getItem("hubauth") || "";
 const auth = () => token ? { Authorization: "Basic " + token } : {};
 function login(msg) { $("#login").style.display = "flex"; $("#login-msg").textContent = msg || ""; $("#pw").focus(); }
@@ -185,11 +281,12 @@ $("#login-form").onsubmit = e => {
   token = btoa("admin:" + $("#pw").value); sessionStorage.setItem("hubauth", token); $("#pw").value = "";
   $("#login").style.display = "none"; refresh();
 };
+$("#logout").onclick = () => { token = ""; sessionStorage.removeItem("hubauth"); login(); };
 const api = async (url, opt = {}) => {
   const r = await fetch(url, { ...opt, headers: { "Content-Type": "application/json", ...auth(), ...(opt.headers || {}) } });
   const j = await r.json().catch(() => ({}));
   if (r.status === 401 || r.status === 403) {
-    login(r.status === 403 ? j.detail : (token ? "wrong password" : ""));
+    login(r.status === 403 ? j.detail : (token ? "That password is not correct." : ""));
     if (r.status === 401) { token = ""; sessionStorage.removeItem("hubauth"); }
     throw new Error(j.detail || "login required");
   }
@@ -197,107 +294,69 @@ const api = async (url, opt = {}) => {
   return j;
 };
 
-// ---- settings ----
-function formValues() {
-  const v = Object.fromEntries(new FormData($("#form")).entries());
-  v.odoo_project_id = v.odoo_project_id === "" ? null : Number(v.odoo_project_id);
-  for (const k of ["dedup_hold_s", "dedup_window_s", "dedup_similarity"]) v[k] = Number(v[k]);
-  try { v.speaker_aliases = v.speaker_aliases.trim() ? JSON.parse(v.speaker_aliases) : {}; }
-  catch (e) { throw new Error("speaker aliases must be valid JSON"); }
-  return v;  // odoo_api_key "" = unchanged
+// ---- views (hash routing)
+function show(view) {
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === "view-" + view));
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.view === (view === "meeting" ? "meetings" : view)));
+  window.scrollTo(0, 0);
 }
+function route() {
+  const h = location.hash.slice(1) || "overview";
+  if (h.startsWith("meeting/")) { selected = decodeURIComponent(h.slice(8)); tab = "minutes"; show("meeting"); showDetail(); }
+  else { selected = null; show(["overview", "meetings", "settings", "install"].includes(h) ? h : "overview"); }
+}
+window.addEventListener("hashchange", route);
 
-function fill() {
+// ---- overview
+function serviceCard(name, state, detail) { return `<div class="service"><div class="name">${dotHtml(state)}${esc(name)}</div><div class="detail">${detail}</div></div>`; }
+function renderOverview() {
   if (!current) return;
-  const f = $("#form");
-  for (const [k, v] of Object.entries(current.values)) {
-    const el = f.elements[k];
-    if (!el) continue;
-    if (k === "odoo_api_key") { el.value = ""; el.placeholder = v ? "•••••• (set, leave empty to keep)" : "not set"; }
-    else if (k === "speaker_aliases") el.value = Object.keys(v).length ? JSON.stringify(v, null, 1) : "";
-    else el.value = v === null ? "" : v;
-  }
-  dirty = false;
-}
-$("#form").addEventListener("input", () => { dirty = true; say("#msg-save", "unsaved changes"); });
-
-async function loadSettings() {
-  current = await api("/api/settings");
-  const s = current.status, v = current.values;
-  setDot("#dot-tr", v.transcriber === "mock" ? null : s.transcriber_reachable);
-  $("#sp-tr").textContent = v.transcriber === "mock" ? "mock mode" : (s.transcriber_reachable ? "up" : "not reachable");
-  setDot("#dot-llm", s.llm_reachable);
-  $("#sp-llm").textContent = s.llm_reachable ? (s.llm_model_pulled ? "up, model present" : "up, model NOT pulled") : "not reachable";
-  $("#ollama-models").innerHTML = s.llm_models.map(m => `<option value="${esc(m)}">`).join("");
-  $("#llm-hint").textContent = s.llm_models.length ? "on this Ollama: " + s.llm_models.join(", ") : "Ollama offline: minutes fall back to the plain transcript";
-  setDot("#dot-odoo", s.odoo_configured ? s.odoo_reachable : null);
-  $("#sp-odoo").textContent = s.odoo_configured ? (s.odoo_reachable ? "configured, reachable" : "configured, NOT reachable") : "not configured";
-  setDot("#dot-agent", !!s.agent);
-  $("#sp-agent").textContent = s.agent ? "" : "no build uploaded";
-  $("#agent-info").textContent = s.agent ? `${s.agent.name} · ${(s.agent.size / 1048576).toFixed(1)} MB · uploaded ${fmtDate(s.agent.modified)}` : "Nothing uploaded yet: build the agent and publish it on the right.";
-  if (!dirty) fill();
+  const s = current.status, v = current.values, issues = [];
+  const mock = v.transcriber === "mock";
+  const trOk = mock || s.transcriber_reachable;
+  const llmOk = s.llm_reachable && s.llm_model_pulled;
+  const odooState = !s.odoo_configured ? "" : s.odoo_reachable ? "ok" : "bad";
+  if (!trOk) issues.push({ lvl: "bad", t: "Speech recognition is not answering", d: "Nobody gets captions until it is back. It restarts by itself after a model change; otherwise check the WhisperLive container on the server.", a: `<button onclick="restartWL()">Restart speech recognition</button><a href="#settings">Settings</a>` });
+  if (mock) issues.push({ lvl: "warn", t: "Test mode is on", d: "Captions are scripted, not real speech. Switch the mode to Normal for real meetings.", a: `<a href="#settings">Settings</a>` });
+  if (!s.llm_reachable) issues.push({ lvl: "warn", t: "Minutes writer is not reachable", d: `No Ollama answers at ${esc(v.ollama_url)}. Meetings can still be captioned; writing minutes gives a plain transcript until this is fixed.`, a: `<a href="#settings">Settings</a>` });
+  else if (!s.llm_model_pulled) issues.push({ lvl: "warn", t: `Model ${esc(v.ollama_model)} is not installed on Ollama`, d: `On the server run: ollama pull ${esc(v.ollama_model)}, or choose one of the installed models in Settings.`, a: `<a href="#settings">Settings</a>` });
+  if (!s.odoo_configured) issues.push({ lvl: "warn", t: "Odoo is not set up", d: "Minutes stay on the hub only. Enter the Odoo address, database, user and API key to publish them as tasks.", a: `<a href="#settings">Set up Odoo</a>` });
+  else if (!s.odoo_reachable) issues.push({ lvl: "bad", t: "Odoo is not answering", d: `Nothing answers at ${esc(v.odoo_url)}. Minutes will be kept on the hub until it is back.`, a: `<a href="#settings">Settings</a>` });
+  if (!s.agent) issues.push({ lvl: "warn", t: "No agent available for download", d: "New PCs cannot install the agent until a build is uploaded.", a: `<a href="#install">Install the agent</a>` });
+  const bad = issues.filter(i => i.lvl === "bad").length;
+  const line = $("#status-line");
+  line.className = "status-line " + (bad ? "bad" : issues.length ? "warn" : "");
+  const live = Object.keys(s.live_rooms).length;
+  line.textContent = bad ? "Captions are not working right now." : issues.length ? "Captions work. Some things need attention." : "Everything is ready for the next meeting.";
+  $("#services").innerHTML = [
+    serviceCard("Speech recognition", trOk ? "ok" : "bad", mock ? "test mode" : trOk ? `ready, model ${esc(v.whisper_model.split("/").pop())}` : "not answering"),
+    serviceCard("Minutes writer", llmOk ? "ok" : "warn", s.llm_reachable ? (s.llm_model_pulled ? `ready, ${esc(v.ollama_model)}` : "model not installed") : "not reachable"),
+    serviceCard("Odoo", odooState, s.odoo_configured ? (s.odoo_reachable ? `publishing to ${esc(v.odoo_db)}` : "not answering") : "not set up"),
+    serviceCard("Right now", live ? "ok" : "", live ? Object.entries(s.live_rooms).map(([id, sp]) => `${esc(id)}: ${sp.map(esc).join(", ") || "no one speaking"}`).join("<br>") : `no meeting in progress, ${s.meetings} on record`),
+  ].join("");
+  $("#issues").innerHTML = issues.length ? issues.map(i => `<li class="${i.lvl}"><div class="text"><b>${i.t}</b><span>${i.d}</span></div>${i.a}</li>`).join("")
+                                         : `<li style="border-color:var(--ok)"><div class="text"><b>Nothing.</b><span>Speech recognition, the minutes writer${s.odoo_configured ? ", Odoo" : ""} and the agent download are all in place.</span></div></li>`;
 }
 
-async function saveSettings() {
-  const btn = $("#btn-save"); btn.disabled = true;
-  try {
-    const r = await api("/api/settings", { method: "PUT", body: JSON.stringify(formValues()) });
-    dirty = false;
-    await loadSettings();
-    say("#msg-save", (r.changed.length ? "saved: " + r.changed.join(", ") : "nothing changed") + (r.notes.length ? " · " + r.notes.join(" · ") : ""), true);
-  } catch (e) { say("#msg-save", "not saved: " + e.message, false); }
-  btn.disabled = false;
+// ---- meetings
+function stateChip(m) {
+  if (!m) return `<span class="chip">no minutes yet</span>`;
+  if (m.status === "file_only") return `<span class="chip warn">minutes file</span>`;
+  if (!m.llm) return `<span class="chip bad">transcript only</span>`;
+  return m.odoo && m.odoo.status === "published" ? `<span class="chip ok">minutes in Odoo, task ${esc(m.odoo.parent_task_id)}</span>` : `<span class="chip ok">minutes ready</span>`;
 }
-
-async function testConn(what) {
-  say("#msg-" + what, "testing…");
-  try {
-    const r = await api("/api/settings/test", { method: "POST", body: JSON.stringify({ what, ...formValues() }) });
-    say("#msg-" + what, r.message, r.ok);
-  } catch (e) { say("#msg-" + what, e.message, false); }
+function meetingItem(r) {
+  return `<li onclick="location.hash='meeting/${encodeURIComponent(r.meeting_id)}'">
+    <div class="title">${esc(r.meeting_id)}${r.live ? ' <span class="chip live">live</span>' : ""}</div>
+    <div class="state">${stateChip(r.minutes)}</div>
+    <div class="meta">${fmtDate(r.started)}${r.started ? ", " + fmtDur(r.started, r.ended) : ""} with ${r.speakers.map(esc).join(", ") || "nobody"}, ${r.segments} sentences</div>
+  </li>`;
 }
-
-async function restartWL() {
-  say("#msg-whisperlive", "restarting…");
-  try { say("#msg-whisperlive", (await api("/api/whisperlive/restart", { method: "POST" })).message, true); }
-  catch (e) { say("#msg-whisperlive", e.message, false); }
-}
-
-async function upload() {
-  const f = $("#exe").files[0];
-  if (!f) return say("#msg-upload", "choose OfficeMeetingAgent.exe first", false);
-  say("#msg-upload", `uploading ${(f.size / 1048576).toFixed(1)} MB…`);
-  try {
-    const r = await fetch("/api/agent/exe", { method: "PUT", body: f, headers: auth() });
-    if (!r.ok) throw new Error((await r.json()).detail || r.status);
-    say("#msg-upload", "published", true); await loadSettings();
-  } catch (e) { say("#msg-upload", "failed: " + e.message, false); }
-}
-
-// ---- meetings ----
-function minutesTag(m) {
-  if (!m) return `<span class="tag">none</span>`;
-  if (m.status === "file_only") return `<span class="tag warn">file</span>`;
-  return `<span class="tag ${m.llm ? "ok" : "warn"}">${m.llm ? "LLM" : "transcript"}</span>`;
-}
-function odooTag(m) {
-  const o = m && m.odoo;
-  if (!o) return `<span class="tag">–</span>`;
-  if (o.status === "published") return `<span class="tag ok">task #${esc(o.parent_task_id)}</span>`;
-  return `<span class="tag bad" title="${esc(o.reason || "")}">local</span>`;
-}
-
 async function loadMeetings() {
   rows = await api("/api/meetings");
-  $("#mrows").innerHTML = rows.length ? rows.map(r => `
-    <tr class="mrow ${r.meeting_id === selected ? "sel" : ""}" data-id="${esc(r.meeting_id)}">
-      <td><code>${esc(r.meeting_id)}</code>${r.live ? ' <span class="tag ok">live</span>' : ""}</td>
-      <td>${fmtDate(r.started)}</td><td>${fmtDur(r.started, r.ended)}</td>
-      <td>${r.speakers.map(esc).join(", ")}</td><td>${r.segments}</td>
-      <td>${minutesTag(r.minutes)}</td><td>${odooTag(r.minutes)}</td>
-      <td><a href="/captions/${esc(r.meeting_id)}" target="_blank" onclick="event.stopPropagation()">open ↗</a></td>
-    </tr>`).join("") : `<tr><td colspan="8" class="empty">no meetings yet – start the agent on a workstation</td></tr>`;
-  document.querySelectorAll("tr.mrow").forEach(tr => tr.onclick = () => select(tr.dataset.id));
+  const empty = `<li style="cursor:default"><div class="empty">No meetings yet. As soon as someone starts the agent and speaks, the meeting appears here.</div></li>`;
+  $("#mrows").innerHTML = rows.length ? rows.map(meetingItem).join("") : empty;
+  $("#recent").innerHTML = rows.length ? rows.slice(0, 4).map(meetingItem).join("") : empty;
 }
 
 // ponytail: ~20-line markdown renderer (headings, bold, code, lists, tables); swap for marked.js if minutes get fancier
@@ -325,47 +384,112 @@ function md(src) {
 
 async function showDetail() {
   if (!selected) return;
-  $("#detail").style.display = "block";
+  if (!rows.length) { try { await loadMeetings(); } catch (e) { return; } }
+  const row = rows.find(r => r.meeting_id === selected), m = row && row.minutes;
   $("#d-title").textContent = selected;
   $("#d-live").href = `/captions/${selected}`;
   document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
-  const row = rows.find(r => r.meeting_id === selected), m = row && row.minutes;
   const btn = $("#d-finalize");
-  if (!btn.disabled) { btn.textContent = m ? "Re-generate minutes" : "Finalize → minutes"; btn.className = m ? "" : "primary"; }
+  if (!btn.disabled) { btn.textContent = m ? "Write minutes again" : "Write minutes"; btn.className = m ? "" : "primary"; }
   const body = $("#d-body");
   if (tab === "minutes") {
     const r = await fetch(`/api/meetings/${selected}/minutes`);
     let note = "";
-    if (m && m.status === "file_only") note = `<div class="note warn">Minutes file found (finalized before the history was recorded).</div>`;
-    else if (m && m.llm) note = `<div class="note">Minutes generated ${fmtDate(m.finalized_at)} by ${esc(m.llm_model || "the LLM")}${m.odoo && m.odoo.status === "published" ? ` · Odoo task #${esc(m.odoo.parent_task_id)} with ${(m.odoo.subtasks || []).length} sub-task(s)` : " · saved on the hub only (Odoo: " + esc((m.odoo && m.odoo.reason) || "not published") + ")"}</div>`;
-    else if (m) note = `<div class="note bad">Finalized ${fmtDate(m.finalized_at)} <b>without the LLM</b>: this is the plain transcript, not minutes. Reason: ${esc(m.llm_error || "Ollama unavailable")}. Fix the Ollama card above (Test), then click <i>Re-generate minutes</i>.</div>`;
+    if (m && m.status === "file_only") note = `<div class="note warn">A minutes file exists for this meeting, written before the hub kept a record of how.</div>`;
+    else if (m && m.llm) note = `<div class="note">Minutes written ${fmtDate(m.finalized_at)} with ${esc(m.llm_model || "the minutes writer")}. ${m.odoo && m.odoo.status === "published" ? `Published to Odoo as task ${esc(m.odoo.parent_task_id)} with ${(m.odoo.subtasks || []).length} action item(s).` : `Kept on the hub only: ${esc((m.odoo && m.odoo.reason) || "Odoo not set up")}.`}</div>`;
+    else if (m) note = `<div class="note bad"><b>These are not minutes yet.</b> The minutes writer was not available on ${fmtDate(m.finalized_at)}, so this is the plain transcript. Reason: ${esc(m.llm_error || "Ollama unavailable")}. Fix it under Settings, then press “Write minutes again”.</div>`;
     body.innerHTML = r.ok ? note + `<div class="md">${md(await r.text())}</div>`
-                          : `<div class="empty">Not finalized yet. <b>Finalize → minutes</b> sends the transcript to the LLM, saves the minutes and publishes them to Odoo.</div>`;
+                          : `<div class="empty">No minutes yet. “Write minutes” sends what was said to the minutes writer, saves the result on the hub and publishes it to Odoo when that is set up. It takes one to three minutes.</div>`;
   } else {
     const segs = await api(`/api/meetings/${selected}/segments`);
-    body.innerHTML = segs.map(s => `<div class="seg"><div><div class="who">${esc(s.speaker)}</div><div class="t">${new Date(s.ts * 1000).toLocaleTimeString()}</div></div><div>${esc(s.text)}</div></div>`).join("") || `<div class="empty">no captions</div>`;
+    body.innerHTML = segs.map(s => `<div class="seg"><div><div class="who">${esc(s.speaker)}</div><div class="t">${new Date(s.ts * 1000).toLocaleTimeString()}</div></div><div>${esc(s.text)}</div></div>`).join("") || `<div class="empty">Nothing was said yet.</div>`;
   }
 }
-function select(id) { selected = id; loadMeetings(); showDetail(); $("#detail").scrollIntoView({ behavior: "smooth", block: "start" }); }
 document.querySelectorAll(".tab").forEach(b => b.onclick = () => { tab = b.dataset.tab; showDetail(); });
-$("#d-close").onclick = () => { selected = null; $("#detail").style.display = "none"; loadMeetings(); };
 $("#d-finalize").onclick = async () => {
-  const btn = $("#d-finalize"); btn.disabled = true; btn.textContent = "Generating minutes… (LLM may take minutes)";
-  try {
-    await api(`/api/meetings/${selected}/finalize`, { method: "POST" });
-  } catch (e) { $("#d-body").innerHTML = `<div class="note bad">Finalize failed: ${esc(e.message)}</div>`; btn.disabled = false; return; }
-  btn.disabled = false;
-  tab = "minutes"; await loadMeetings(); await showDetail();
+  const btn = $("#d-finalize"); btn.disabled = true; btn.textContent = "Writing minutes… this takes a few minutes";
+  try { await api(`/api/meetings/${selected}/finalize`, { method: "POST" }); }
+  catch (e) { $("#d-body").innerHTML = `<div class="note bad">Minutes could not be written: ${esc(e.message)}</div>`; btn.disabled = false; return; }
+  btn.disabled = false; tab = "minutes"; await loadMeetings(); await showDetail();
 };
 
+// ---- settings
+function formValues() {
+  const v = Object.fromEntries(new FormData($("#form")).entries());
+  v.odoo_project_id = v.odoo_project_id === "" ? null : Number(v.odoo_project_id);
+  for (const k of ["dedup_hold_s", "dedup_window_s", "dedup_similarity"]) v[k] = Number(v[k]);
+  try { v.speaker_aliases = v.speaker_aliases.trim() ? JSON.parse(v.speaker_aliases) : {}; }
+  catch (e) { throw new Error("the name mapping must be valid JSON, for example {\"Gina\": \"Gian Domenico Bianchi\"}"); }
+  return v;  // odoo_api_key "" = unchanged
+}
+function fill() {
+  if (!current) return;
+  const f = $("#form");
+  for (const [k, v] of Object.entries(current.values)) {
+    const el = f.elements[k];
+    if (!el) continue;
+    if (k === "odoo_api_key") { el.value = ""; el.placeholder = v ? "saved, leave empty to keep it" : "not set"; }
+    else if (k === "speaker_aliases") el.value = Object.keys(v).length ? JSON.stringify(v, null, 1) : "";
+    else el.value = v === null ? "" : v;
+  }
+  dirty = false;
+}
+$("#form").addEventListener("input", () => { dirty = true; say("#msg-save", "You have unsaved changes."); });
+function stateText(id, ok, text) { $(id).innerHTML = dotHtml(ok === null ? "" : ok ? "ok" : "bad") + esc(text); }
+async function loadSettings() {
+  current = await api("/api/settings");
+  const s = current.status, v = current.values;
+  stateText("#st-tr", v.transcriber === "mock" ? null : s.transcriber_reachable, v.transcriber === "mock" ? "test mode" : s.transcriber_reachable ? "ready" : "not answering");
+  stateText("#st-llm", s.llm_reachable && s.llm_model_pulled, s.llm_reachable ? (s.llm_model_pulled ? "ready" : "model not installed") : "not reachable");
+  stateText("#st-odoo", s.odoo_configured ? s.odoo_reachable : null, s.odoo_configured ? (s.odoo_reachable ? "ready" : "not answering") : "not set up");
+  $("#ollama-models").innerHTML = s.llm_models.map(m => `<option value="${esc(m)}">`).join("");
+  $("#llm-hint").textContent = s.llm_models.length ? "Installed on this Ollama: " + s.llm_models.join(", ") : "Ollama is not answering, so no model list is available.";
+  $("#agent-info").textContent = s.agent ? `Current build: ${(s.agent.size / 1048576).toFixed(1)} MB, uploaded ${fmtDate(s.agent.modified)}.` : "No build uploaded yet. The download links will not work until a maintainer uploads one (below).";
+  $("#dl-exe").style.opacity = s.agent ? 1 : .5;
+  if (!dirty) fill();
+  renderOverview();
+}
+async function saveSettings() {
+  const btn = $("#btn-save"); btn.disabled = true;
+  try {
+    const r = await api("/api/settings", { method: "PUT", body: JSON.stringify(formValues()) });
+    dirty = false; await loadSettings();
+    say("#msg-save", (r.changed.length ? "Saved." : "Nothing changed.") + (r.notes.length ? " " + r.notes.join(" ") : ""), true);
+  } catch (e) { say("#msg-save", "Not saved: " + e.message, false); }
+  btn.disabled = false;
+}
+async function checkConn(what) {
+  say("#msg-" + what, "Checking…");
+  try { const r = await api("/api/settings/test", { method: "POST", body: JSON.stringify({ what, ...formValues() }) }); say("#msg-" + what, r.message, r.ok); }
+  catch (e) { say("#msg-" + what, e.message, false); }
+}
+async function restartWL() {
+  say("#msg-whisperlive", "Restarting…");
+  try { say("#msg-whisperlive", (await api("/api/whisperlive/restart", { method: "POST" })).message, true); }
+  catch (e) { say("#msg-whisperlive", e.message, false); }
+}
+async function upload() {
+  const f = $("#exe").files[0];
+  if (!f) return say("#msg-upload", "Choose the OfficeMeetingAgent.exe file first.", false);
+  say("#msg-upload", `Uploading ${(f.size / 1048576).toFixed(1)} MB…`);
+  try {
+    const r = await fetch("/api/agent/exe", { method: "PUT", body: f, headers: auth() });
+    if (!r.ok) throw new Error((await r.json()).detail || r.status);
+    say("#msg-upload", "Uploaded. Every PC now downloads this build.", true); await loadSettings();
+  } catch (e) { say("#msg-upload", "Upload failed: " + e.message, false); }
+}
+
+// ---- boot
 async function refresh() {
   try {
     const h = await api("/health");
-    $("#health").textContent = `${h.transcriber} · ${h.rooms} live room(s) · ${new Date().toLocaleTimeString()}`;
+    $("#health").textContent = `${h.rooms ? h.rooms + " meeting(s) live" : "no meeting live"}, checked ${new Date().toLocaleTimeString([], { timeStyle: "short" })}`;
     await Promise.all([loadSettings(), loadMeetings()]);
-  } catch (e) { $("#health").textContent = "hub unreachable: " + e.message; }
+    if (selected) showDetail();
+  } catch (e) { if (!/login/.test(e.message)) $("#health").textContent = "Hub not reachable: " + e.message; }
 }
-if (token) refresh(); else { login(); api("/health").then(loadMeetings).catch(() => {}); }
+route();
+if (token) refresh(); else login();
 setInterval(() => { if (token) refresh(); }, 20000);
 </script>
 </body>
