@@ -21,7 +21,14 @@ Nothing leaves the LAN. Works with any browser or call app because audio is capt
 ```
 
 The wire protocols are documented in [`CONTRACTS.md`](CONTRACTS.md); the design in
-[`docs/superpowers/specs/`](docs/superpowers/specs/).
+[`docs/superpowers/specs/`](docs/superpowers/specs/). Working on the code (human or AI agent)?
+Read [`AGENTS.md`](AGENTS.md) first.
+
+**Status (2026-11-24):** deployed on the office GPU host; live transcription of real speech
+(Italian and English) verified end to end through the hub. Dashboard, settings, agent download
+and minutes (transcript fallback) verified. LLM minutes need free GPU memory on the host (see
+Troubleshooting); Odoo publishing is implemented and unit-tested but not yet exercised against
+the office Odoo.
 
 ## 1. Server (GPU host, e.g. `192.168.10.17`)
 
@@ -44,8 +51,14 @@ models you already pulled are reused and the GPU is not loaded twice. If Odoo al
 same host, use `ODOO_URL=http://host.docker.internal:8069`, never `localhost` (that would be the
 hub container itself).
 
-Open firewall port **8085** (hub) on the host; 9090 only needs to be reachable inside Docker.
-Check `http://<hub-ip>:8085/dashboard`: all three cards should be green.
+The stack publishes a single host port, **8085**; WhisperLive is reached only inside the compose
+network (the office host already uses 9000 and 9090 for other containers). Open 8085 in the
+Windows Firewall, then check `http://<hub-ip>:8085/dashboard`: all three cards should be green.
+
+Updating: `git pull && docker compose up -d --build` in a **normal (interactive) terminal** on the
+host. Over SSH, `docker build` fails with "A specified logon session does not exist" because
+Docker Desktop's Windows credential helper is unavailable there; `docker compose up -d --no-build`
+still works over SSH for config-only changes (`.env`, compose).
 
 ### Admin dashboard
 
@@ -99,8 +112,12 @@ On any Windows PC with Python 3.11 or 3.12, build once:
 
 ```powershell
 cd client
-build_exe.bat          # -> client\dist\OfficeMeetingAgent.exe
+build_exe.bat          # -> client\dist\OfficeMeetingAgent.exe   (uses `py -3.12`, then `py -3.11`)
+# other interpreter, e.g. a uv/Astral install:  set PY=py -V:Astral\CPython3.12.13 && build_exe.bat
 ```
+
+Or upload from the command line instead of the dashboard form:
+`curl -u admin:<ADMIN_PASSWORD> -T client\dist\OfficeMeetingAgent.exe http://<hub-ip>:8085/api/agent/exe`
 
 Upload `client\dist\OfficeMeetingAgent.exe` once in the dashboard (*Workstation agent* card).
 On each new PC open `http://<hub-ip>:8085/dashboard`, download the `.exe` and the pre-filled
@@ -175,7 +192,10 @@ Layout: `server/` hub, transcriber adapters, dedup, Ollama, Odoo · `client/` Wi
 | `error: WhisperLive full` | more than `--max_clients` streams; raise it in `docker-compose.yml` |
 | Captions appear 2–3 s after the sentence ends | expected: `DEDUP_HOLD_S` hold for bleed suppression; set `0` to disable |
 | Two people's identical sentence both kept | they were > 2 s apart or < 4 words; tune `DEDUP_WINDOW_S`, `DEDUP_SIMILARITY` |
-| Finalize says `transcript` instead of `LLM` | Ollama down or model not pulled: `docker compose exec ollama ollama list` |
+| Finalize says `transcript` instead of `LLM` | Ollama down, model not pulled, or **GPU memory full**: the hub log shows the Ollama error. On the office host, LM Studio / ComfyUI holding a model leaves Ollama with `cudaMalloc failed: out of memory`; unload them (a 9B model needs ~6 GB free) or pick a smaller model in the dashboard. `ollama list` on the host shows what is pulled |
 | Finalize says `saved_locally` | Odoo not configured or unreachable; see hub log, file is in `data/meetings/`. The dashboard shows the reason on hover of the red `local` tag |
-| Dashboard card red | the hub cannot open a TCP connection to that URL: container down, wrong `.env` URL, or firewall |
+| Dashboard card red | the hub cannot open a TCP connection to that URL: container down, wrong URL, or firewall |
+| Dashboard login form says `admin disabled` | `ADMIN_PASSWORD` missing in `.env`; add it and `docker compose up -d` |
+| `/download/OfficeMeetingAgent.exe` → `no agent uploaded yet` | nobody has built and uploaded the exe yet: section 2, option A |
+| WhisperLive log: `Unexpected error: <ServerConnection ...>` every 20 s | harmless: the dashboard's reachability probe opens and closes a TCP connection |
 | System audio not captured | `pip install pyaudiowpatch` (Python ≤ 3.12), default playback device must be a WASAPI device |
