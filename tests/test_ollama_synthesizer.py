@@ -56,7 +56,7 @@ def test_synthesize_posts_expected_payload(monkeypatch):
     md = syn.synthesize(SEGS, "daily", "http://ollama:11434/", "qwen3.5:9b", timeout=42)
     assert seen["url"] == "http://ollama:11434/api/chat" and seen["timeout"] == 42
     assert seen["body"]["model"] == "qwen3.5:9b" and seen["body"]["stream"] is False
-    assert seen["body"]["options"] == {"temperature": 0.2}
+    assert seen["body"]["options"] == {"temperature": 0.2, "num_ctx": 16384}
     assert md == GOOD_MD
 
 

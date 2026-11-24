@@ -61,7 +61,7 @@ def clean_response(text: str) -> str:
 
 def synthesize(segments: list[dict], meeting_id: str, url: str, model: str, timeout: float = 300) -> str:
     payload = {"model": model, "messages": build_messages(segments, meeting_id), "stream": False,
-               "options": {"temperature": 0.2}}
+               "options": {"temperature": 0.2, "num_ctx": 16384}}  # explicit ctx: Ollama otherwise reserves the model max (KV cache of many GB)
     req = urllib.request.Request(f"{url.rstrip('/')}/api/chat", data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"}, method="POST")
     try:
