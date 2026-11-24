@@ -1,6 +1,9 @@
 services:
   whisperlive:
-    image: ghcr.io/collabora/whisperlive-gpu:latest
+    build:
+      context: .
+      dockerfile: server/whisperlive.Dockerfile   # upstream image + CUDA 12 libs, see the file
+    image: caption-whisperlive
     container_name: caption-whisperlive
     # The model comes from /config/whisper_model when the dashboard has set one, else from .env.
     # The hub rewrites that file and restarts this container (docker socket) when the admin changes the model.

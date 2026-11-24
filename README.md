@@ -171,6 +171,7 @@ Layout: `server/` hub, transcriber adapters, dedup, Ollama, Odoo · `client/` Wi
 | --- | --- |
 | Strip says `reconnecting (ConnectionRefusedError)` | hub not running or port 8085 blocked; `curl http://<hub-ip>:8085/health` from the workstation |
 | Strip connected, no captions | you are the only speaker and silent; or WhisperLive still loading (`docker compose logs whisperlive`) |
+| WhisperLive log: `Library libcublas.so.12 is not found` | the upstream image lacks CUDA 12 libs; `server/whisperlive.Dockerfile` adds them, rebuild with `docker compose up -d --build` |
 | `error: WhisperLive full` | more than `--max_clients` streams; raise it in `docker-compose.yml` |
 | Captions appear 2–3 s after the sentence ends | expected: `DEDUP_HOLD_S` hold for bleed suppression; set `0` to disable |
 | Two people's identical sentence both kept | they were > 2 s apart or < 4 words; tune `DEDUP_WINDOW_S`, `DEDUP_SIMILARITY` |
