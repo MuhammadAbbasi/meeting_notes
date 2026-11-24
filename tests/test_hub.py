@@ -214,6 +214,7 @@ AUTH = ("admin", "pw")
 
 
 def test_admin_requires_password(client):
+    assert client.get("/", follow_redirects=False).headers["location"] == "/dashboard"
     assert client.get("/dashboard").status_code == 401
     assert client.get("/api/settings", auth=("x", "wrong")).status_code == 401
     assert client.put("/api/settings", json={}).status_code == 401

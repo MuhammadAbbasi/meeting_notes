@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
@@ -101,6 +101,11 @@ async def _close(ws: WebSocket, code: int = 1000) -> None:
 
 
 # --- status & admin ---------------------------------------------------------------------------
+
+@app.get("/", include_in_schema=False)
+async def root() -> RedirectResponse:
+    return RedirectResponse("/dashboard")
+
 
 @app.get("/health")
 async def health() -> dict:
