@@ -47,31 +47,42 @@ hub container itself).
 Open firewall port **8085** (hub) on the host; 9090 only needs to be reachable inside Docker.
 Check `http://<hub-ip>:8085/dashboard`: all three cards should be green.
 
-### Dashboard
+### Admin dashboard
 
-`http://<hub-ip>:8085/dashboard` (no login; LAN only) shows:
+`http://<hub-ip>:8085/dashboard`, any username + the `ADMIN_PASSWORD` from `.env`. It is the
+place to configure the system after the first start; `.env` only provides first-run defaults.
 
-- **Settings** as read by the running hub: transcriber mode/URL/model, Ollama URL/model and
-  whether that model is pulled, Odoo URL/database/user/project (API key shown only as set/not set),
-  speaker aliases, cross-talk thresholds, data directory. A coloured dot per card tells whether the
-  service answers (green/red; grey = not configured or mock). Refreshes every 15 s.
+- **Settings**, saved in `data/settings.json` and applied to every workstation the moment you
+  click *Save* (no restart): transcriber mode and URL, **Whisper model** (saving a different one
+  rewrites the model file and restarts the WhisperLive container through the Docker socket; the
+  first use of a new model downloads it), **Ollama** URL and model (with the list of models
+  actually present on that Ollama), **Odoo** URL / database / user / API key / project id and
+  speaker aliases, cross-talk thresholds, and the default meeting id and language that new agents
+  receive. Each card has a *Test* button that tries the values currently typed, before saving
+  (Odoo: logs in and lists the internal users it will assign tasks to).
+- **Workstation agent**: upload `OfficeMeetingAgent.exe` once (built with `client\build_exe.bat`);
+  every new PC downloads it plus a pre-filled `config.json` from the same card and only has to
+  type the person's name on first start.
 - **Meetings**: every meeting on disk, newest first, with date, duration, speakers, caption count,
   minutes status (`LLM` / `transcript` fallback / `file` / none), Odoo result (task number or
-  `local`), live badge for rooms with connected agents, and a link to the live caption page.
-- Click a row to read the **minutes** (rendered) or the raw **transcript**, or to **Finalize** a
-  meeting that was never finalized (same as the agent button).
+  `local`, reason on hover), live badge for rooms with connected agents, and a link to the live
+  caption page. Click a row to read the rendered **minutes** or the raw **transcript**, or to
+  **Finalize** a meeting that nobody finalized.
 
-Settings are read-only here: change `.env` and `docker compose up -d` to apply.
+The hub mounts `/var/run/docker.sock` only to restart WhisperLive. Keep the dashboard password
+non-trivial: whoever can log in can restart that container.
 
 `WHISPER_MODEL` must be a local path or a Hugging Face id containing a `/`
 (`deepdml/faster-whisper-large-v3-turbo-ct2` by default; `Systran/faster-whisper-large-v3` for
 maximum accuracy at ~3× the GPU cost). WhisperLive runs in batched single-model mode so VRAM is
 shared across all streams.
 
-Hub environment variables (all optional):
+Hub environment variables. Only `ADMIN_PASSWORD` matters long-term: everything else is the
+first-run default that the dashboard overrides (`data/settings.json`).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
+| `ADMIN_PASSWORD` | empty (dashboard disabled) | password for `/dashboard` and all settings/upload endpoints |
 | `TRANSCRIBER` | `whisperlive` | `mock` for development without a GPU |
 | `WHISPERLIVE_URL` | `ws://whisperlive:9090` | upstream transcriber |
 | `DEDUP_HOLD_S` / `DEDUP_WINDOW_S` / `DEDUP_SIMILARITY` | `2.5` / `2.0` / `0.78` | cross-talk suppression, see CONTRACTS §1.5 |
@@ -91,9 +102,11 @@ cd client
 build_exe.bat          # -> client\dist\OfficeMeetingAgent.exe
 ```
 
-Copy `OfficeMeetingAgent.exe` to each colleague. The first start opens a setup form: name
-(as shown in captions), hub IP, meeting id, language (`auto`, `it`, `en`…), and whether to also
-capture system audio. Settings are saved next to the `.exe` in `config.json`.
+Upload `client\dist\OfficeMeetingAgent.exe` once in the dashboard (*Workstation agent* card).
+On each new PC open `http://<hub-ip>:8085/dashboard`, download the `.exe` and the pre-filled
+`config.json` into one folder and run the `.exe`: the setup form already has the hub IP, meeting
+id and language, so the person only types their name (as shown in captions). Settings are saved
+next to the `.exe` in `config.json`.
 
 ### Option B: from source
 

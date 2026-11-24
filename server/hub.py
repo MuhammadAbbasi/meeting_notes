@@ -8,50 +8,71 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import time
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, WebSocket
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from server.deduplicator import CrossTalkFilter
+from server.docker_api import restart_container
 from server.meeting import MEETING_ID_RE, SPEAKER_RE, MeetingRoom, StreamClock, caption_frame
 from server.odoo_client import OdooMeetingClient
 from server.ollama_synthesizer import SynthesisUnavailable, synthesize, transcript_markdown
+from server.settings import FIELDS, Settings
 from server.transcriber import TranscriberUnavailable, make_transcriber
 
 log = logging.getLogger("hub")
 DATA_DIR = Path(os.getenv("DATA_DIR", "./data/meetings"))
-TRANSCRIBER_KIND = os.getenv("TRANSCRIBER", "whisperlive")
-WHISPERLIVE_URL = os.getenv("WHISPERLIVE_URL", "ws://whisperlive:9090")
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "deepdml/faster-whisper-large-v3-turbo-ct2")
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
-DEDUP_HOLD_S = float(os.getenv("DEDUP_HOLD_S", "2.5"))
-DEDUP_WINDOW_S = float(os.getenv("DEDUP_WINDOW_S", "2.0"))
-DEDUP_SIMILARITY = float(os.getenv("DEDUP_SIMILARITY", "0.78"))
+DIST_DIR = Path(os.getenv("DIST_DIR", "./data/dist"))
+SETTINGS_FILE = Path(os.getenv("SETTINGS_FILE", "./data/settings.json"))
+WHISPER_MODEL_FILE = Path(os.getenv("WHISPER_MODEL_FILE", "./data/config/whisper_model"))
+WHISPERLIVE_CONTAINER = os.getenv("WHISPERLIVE_CONTAINER", "caption-whisperlive")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+EXE_NAME = "OfficeMeetingAgent.exe"
 _STATIC = Path(__file__).parent / "static"
 VIEWER_HTML = (_STATIC / "captions.html").read_text(encoding="utf-8")
 DASHBOARD_HTML = (_STATIC / "dashboard.html").read_text(encoding="utf-8")
 
 app = FastAPI(title="caption-hub")
+S = Settings(SETTINGS_FILE)
 rooms: dict[str, MeetingRoom] = {}
 _pending: set[asyncio.Task] = set()  # keeps hold-window tasks alive
+_basic = HTTPBasic(realm="caption-hub admin")
+
+
+def admin(cred: HTTPBasicCredentials = Depends(_basic)) -> None:
+    """HTTP Basic auth for the dashboard and every write endpoint; any username, ADMIN_PASSWORD as password."""
+    if not ADMIN_PASSWORD:
+        raise HTTPException(403, "admin disabled: set ADMIN_PASSWORD on the hub")
+    if not secrets.compare_digest(cred.password.encode(), ADMIN_PASSWORD.encode()):
+        raise HTTPException(401, "wrong password", headers={"WWW-Authenticate": "Basic"})
+
+
+def odoo_client(**overrides) -> OdooMeetingClient:
+    v = {k: S.get(k) for k in ("odoo_url", "odoo_db", "odoo_user", "odoo_api_key", "odoo_project_id", "speaker_aliases")}
+    v.update({k: x for k, x in overrides.items() if k in v and x not in (None, "")})
+    return OdooMeetingClient(url=v["odoo_url"], db=v["odoo_db"], username=v["odoo_user"], api_key=v["odoo_api_key"],
+                             project_id=v["odoo_project_id"], speaker_aliases=v["speaker_aliases"])
 
 
 def get_room(meeting_id: str) -> MeetingRoom:
     if meeting_id not in rooms:
-        rooms[meeting_id] = MeetingRoom(meeting_id, DATA_DIR, CrossTalkFilter(DEDUP_WINDOW_S, DEDUP_SIMILARITY))
+        rooms[meeting_id] = MeetingRoom(meeting_id, DATA_DIR,
+                                        CrossTalkFilter(S.get("dedup_window_s"), S.get("dedup_similarity")))
     return rooms[meeting_id]
 
 
 async def _settle(room: MeetingRoom, frame: dict) -> None:
     """After the hold window, emit the completed caption or retract it as mic bleed."""
-    if DEDUP_HOLD_S > 0:
-        await asyncio.sleep(DEDUP_HOLD_S)
+    hold = S.get("dedup_hold_s")
+    if hold > 0:
+        await asyncio.sleep(hold)
     if room.dedup.should_emit(frame):
         room.record(frame)
         await room.broadcast(frame)
@@ -79,9 +100,11 @@ async def _close(ws: WebSocket, code: int = 1000) -> None:
             pass
 
 
+# --- status & admin ---------------------------------------------------------------------------
+
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "transcriber": TRANSCRIBER_KIND, "rooms": len(rooms)}
+    return {"status": "ok", "transcriber": S.get("transcriber"), "rooms": len(rooms)}
 
 
 @app.get("/captions/{meeting_id}", response_class=HTMLResponse)
@@ -89,7 +112,7 @@ async def viewer(meeting_id: str) -> str:
     return VIEWER_HTML.replace("__MEETING_ID__", _valid_id(meeting_id))
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
+@app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(admin)])
 async def dashboard() -> str:
     return DASHBOARD_HTML
 
@@ -114,27 +137,140 @@ def _ollama_models(url: str, timeout: float = 2.0) -> list[str] | None:
         return None
 
 
-@app.get("/api/settings")
+def _agent_info() -> dict | None:
+    exe = DIST_DIR / EXE_NAME
+    if not exe.exists():
+        return None
+    st = exe.stat()
+    return {"name": EXE_NAME, "size": st.st_size, "modified": st.st_mtime}
+
+
+@app.get("/api/settings", dependencies=[Depends(admin)])
 async def settings() -> dict:
-    """Effective configuration plus live reachability of each dependency. Secrets are masked."""
-    odoo = OdooMeetingClient()
+    """Editable values (secrets masked) plus live reachability of each dependency."""
+    odoo = odoo_client()
     whisper_ok, odoo_ok, models = await asyncio.gather(
-        _reachable(WHISPERLIVE_URL) if TRANSCRIBER_KIND != "mock" else asyncio.sleep(0, True),
+        _reachable(S.get("whisperlive_url")) if S.get("transcriber") != "mock" else asyncio.sleep(0, True),
         _reachable(odoo.url) if odoo.url else asyncio.sleep(0, False),
-        asyncio.to_thread(_ollama_models, OLLAMA_URL))
-    pulled = any(m == OLLAMA_MODEL or m.split(":")[0] == OLLAMA_MODEL for m in models or [])
+        asyncio.to_thread(_ollama_models, S.get("ollama_url")))
+    model = S.get("ollama_model")
     return {
-        "transcriber": {"kind": TRANSCRIBER_KIND, "url": WHISPERLIVE_URL, "model": WHISPER_MODEL, "reachable": whisper_ok},
-        "llm": {"url": OLLAMA_URL, "model": OLLAMA_MODEL, "reachable": models is not None,
-                "model_pulled": pulled, "models": models or []},
-        "odoo": {"url": odoo.url, "db": odoo.db, "user": odoo.username, "api_key": "set" if odoo.api_key else "not set",
-                 "project_id": odoo.project_id, "configured": odoo.is_configured, "reachable": odoo_ok,
-                 "speaker_aliases": odoo.speaker_aliases},
-        "dedup": {"hold_s": DEDUP_HOLD_S, "window_s": DEDUP_WINDOW_S, "similarity": DEDUP_SIMILARITY},
-        "storage": {"data_dir": str(DATA_DIR.resolve()), "meetings": len(list(DATA_DIR.glob("*.jsonl")))},
-        "live_rooms": {mid: sorted(r.speakers) for mid, r in rooms.items()},
+        "values": S.public(),
+        "status": {
+            "transcriber_reachable": whisper_ok,
+            "whisperlive_container": WHISPERLIVE_CONTAINER,
+            "llm_reachable": models is not None,
+            "llm_models": models or [],
+            "llm_model_pulled": any(m == model or m.split(":")[0] == model for m in models or []),
+            "odoo_configured": odoo.is_configured,
+            "odoo_reachable": odoo_ok,
+            "data_dir": str(DATA_DIR.resolve()),
+            "meetings": len(list(DATA_DIR.glob("*.jsonl"))),
+            "live_rooms": {mid: sorted(r.speakers) for mid, r in rooms.items()},
+            "agent": _agent_info(),
+        },
     }
 
+
+def _apply_whisper_model(model: str) -> str:
+    """Write the model for the WhisperLive container and restart it; the compose command reads that file."""
+    WHISPER_MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
+    WHISPER_MODEL_FILE.write_text(model, encoding="utf-8")
+    try:
+        restart_container(WHISPERLIVE_CONTAINER)
+        return "whisperlive restarting (first use of a new model downloads it: minutes)"
+    except Exception as e:  # no docker socket (dev) or container missing
+        return f"model saved; restart WhisperLive manually ({type(e).__name__}: {e})"
+
+
+@app.put("/api/settings", dependencies=[Depends(admin)])
+async def update_settings(patch: dict) -> dict:
+    try:
+        changed = S.update(patch)
+    except (ValueError, TypeError, json.JSONDecodeError) as e:
+        raise HTTPException(400, f"invalid value: {e}")
+    notes = []
+    if "whisper_model" in changed and S.get("transcriber") != "mock":
+        notes.append(await asyncio.to_thread(_apply_whisper_model, S.get("whisper_model")))
+    if "transcriber" in changed or "whisperlive_url" in changed:
+        notes.append("new connections use the new transcriber; running streams keep the old one")
+    log.info("settings changed: %s", changed)
+    return {"changed": changed, "values": S.public(), "notes": notes}
+
+
+@app.post("/api/settings/test", dependencies=[Depends(admin)])
+async def test_settings(body: dict) -> dict:
+    """Try the posted (unsaved) values: what = odoo | ollama | whisperlive."""
+    what = body.get("what")
+    v = {k: body.get(k) for k in FIELDS}
+    if what == "odoo":
+        client = odoo_client(**v)
+        if not client.is_configured:
+            return {"ok": False, "message": "URL, database, user and API key are all required"}
+        try:
+            users = await asyncio.to_thread(client.fetch_active_users)
+        except Exception as e:
+            return {"ok": False, "message": f"{type(e).__name__}: {e}"}
+        names = sorted(u["name"] for u in users)
+        return {"ok": True, "message": f"login ok, {len(users)} internal users: {', '.join(names[:8])}"
+                                       + (" …" if len(names) > 8 else ""), "users": names}
+    if what == "ollama":
+        url = (v.get("ollama_url") or S.get("ollama_url")).rstrip("/")
+        model = v.get("ollama_model") or S.get("ollama_model")
+        models = await asyncio.to_thread(_ollama_models, url)
+        if models is None:
+            return {"ok": False, "message": f"no Ollama at {url}"}
+        pulled = any(m == model or m.split(":")[0] == model for m in models)
+        return {"ok": pulled, "models": models,
+                "message": f"reachable, model {'present' if pulled else 'NOT pulled: run ollama pull ' + model}"}
+    if what == "whisperlive":
+        url = v.get("whisperlive_url") or S.get("whisperlive_url")
+        ok = await _reachable(url)
+        return {"ok": ok, "message": f"{url} {'answers' if ok else 'does not answer'}"}
+    raise HTTPException(400, "what must be odoo, ollama or whisperlive")
+
+
+@app.post("/api/whisperlive/restart", dependencies=[Depends(admin)])
+async def whisperlive_restart() -> dict:
+    return {"message": await asyncio.to_thread(_apply_whisper_model, S.get("whisper_model"))}
+
+
+# --- workstation agent distribution ----------------------------------------------------------
+
+@app.put("/api/agent/exe", dependencies=[Depends(admin)])
+async def upload_exe(request: Request) -> dict:
+    """Raw body = the built OfficeMeetingAgent.exe (no multipart, so no extra dependency)."""
+    DIST_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = DIST_DIR / (EXE_NAME + ".part")
+    size = 0
+    with tmp.open("wb") as f:
+        async for chunk in request.stream():
+            f.write(chunk)
+            size += len(chunk)
+    if size < 1024:
+        tmp.unlink(missing_ok=True)
+        raise HTTPException(400, "empty upload")
+    tmp.replace(DIST_DIR / EXE_NAME)
+    return {"agent": _agent_info()}
+
+
+@app.get("/download/" + EXE_NAME)
+async def download_exe() -> FileResponse:
+    exe = DIST_DIR / EXE_NAME
+    if not exe.exists():
+        raise HTTPException(404, "no agent uploaded yet: build it with client/build_exe.bat and upload it from the dashboard")
+    return FileResponse(exe, media_type="application/octet-stream", filename=EXE_NAME)
+
+
+@app.get("/download/config.json")
+async def download_config(request: Request) -> dict:
+    """Pre-filled agent config: the setup dialog on a new PC only asks for the person's name."""
+    return {"user_name": "", "server_ip": request.url.hostname, "hub_port": request.url.port or 80,
+            "meeting_id": S.get("default_meeting"), "language": S.get("default_language"),
+            "input_device": None, "overlay_alpha": 0.5, "capture_system_audio": False}
+
+
+# --- meetings -----------------------------------------------------------------------------------
 
 def _meeting_summary(path: Path) -> dict:
     mid = path.stem
@@ -176,13 +312,13 @@ async def finalize(meeting_id: str) -> dict:
     if not segs:
         raise HTTPException(404, "no completed captions for this meeting")
     try:
-        markdown = await asyncio.to_thread(synthesize, segs, meeting_id, OLLAMA_URL, OLLAMA_MODEL)
+        markdown = await asyncio.to_thread(synthesize, segs, meeting_id, S.get("ollama_url"), S.get("ollama_model"))
         llm = True
     except SynthesisUnavailable as e:
         log.warning("%s: %s; falling back to transcript", meeting_id, e)
         markdown, llm = transcript_markdown(segs), False
     participants = sorted({s["speaker"] for s in segs})
-    odoo = await asyncio.to_thread(OdooMeetingClient().publish_or_save, meeting_id, markdown, participants, DATA_DIR)
+    odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR)
     (DATA_DIR / f"{meeting_id}.finalize.json").write_text(
         json.dumps({"finalized_at": time.time(), "llm": llm, "odoo": odoo}), encoding="utf-8")
     if meeting_id in rooms:
@@ -190,6 +326,8 @@ async def finalize(meeting_id: str) -> dict:
                                            "odoo_status": odoo["status"]})
     return {"meeting_id": meeting_id, "markdown": markdown, "llm": llm, "saved_to": odoo["path"], "odoo": odoo}
 
+
+# --- live streams -------------------------------------------------------------------------------
 
 @app.websocket("/listen/{meeting_id}")
 async def listen(ws: WebSocket, meeting_id: str) -> None:
@@ -239,7 +377,8 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
     transcriber = None
     try:
         try:
-            transcriber = make_transcriber(meeting_id, speaker, lang)
+            transcriber = make_transcriber(meeting_id, speaker, lang, kind=S.get("transcriber"),
+                                           url=S.get("whisperlive_url"), model=S.get("whisper_model"))
             await transcriber.start(on_segments)
         except TranscriberUnavailable as e:
             await ws.send_json({"type": "error", "message": str(e)})

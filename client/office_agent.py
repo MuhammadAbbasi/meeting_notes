@@ -26,9 +26,12 @@ def save_config(cfg: dict) -> None:
 
 
 def load_config() -> dict:
-    if CONFIG.exists():
-        return json.loads(CONFIG.read_text(encoding="utf-8"))
+    """config.json next to the exe; a pre-filled one from the hub (/download/config.json) has no user_name yet."""
     defaults = json.loads((HERE / "config.example.json").read_text(encoding="utf-8"))
+    if CONFIG.exists():
+        defaults.update(json.loads(CONFIG.read_text(encoding="utf-8")))
+        if defaults.get("user_name"):
+            return defaults
     cfg = ask_config(defaults)
     if cfg is None:
         sys.exit(0)

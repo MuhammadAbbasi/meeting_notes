@@ -54,12 +54,28 @@ sends nothing.
   `llm:false` means Ollama was unreachable and `markdown` is the plain transcript. Minutes are
   always written to `data/meetings/{meeting_id}.minutes.md`, and the outcome to
   `data/meetings/{meeting_id}.finalize.json` (`{"finalized_at":float,"llm":bool,"odoo":{...}}`).
-- `GET /dashboard` → HTML admin page (settings, dependency status, meeting history, minutes).
-- `GET /api/settings` → effective configuration with secrets masked (`"api_key":"set"|"not set"`):
-  `{"transcriber":{kind,url,model,reachable},"llm":{url,model,reachable,model_pulled,models[]},
-  "odoo":{url,db,user,api_key,project_id,configured,reachable,speaker_aliases},
-  "dedup":{hold_s,window_s,similarity},"storage":{data_dir,meetings},"live_rooms":{id:[speakers]}}`.
-  `reachable` is a 2 s TCP connect (Ollama: `GET /api/tags`); for `TRANSCRIBER=mock` it is `true`.
+- Admin endpoints (HTTP Basic, any user, password `ADMIN_PASSWORD`; 403 when unset):
+  - `GET /dashboard` → HTML admin page.
+  - `GET /api/settings` → `{"values":{<key>:<value>}, "status":{...}}`. Keys (see
+    `server/settings.py` `FIELDS`): `transcriber, whisperlive_url, whisper_model, ollama_url,
+    ollama_model, odoo_url, odoo_db, odoo_user, odoo_api_key, odoo_project_id, speaker_aliases,
+    dedup_hold_s, dedup_window_s, dedup_similarity, default_meeting, default_language`.
+    Secrets are returned as booleans (set / not set). `status`: `transcriber_reachable,
+    llm_reachable, llm_models[], llm_model_pulled, odoo_configured, odoo_reachable, data_dir,
+    meetings, live_rooms{id:[speakers]}, agent{name,size,modified}|null`. Reachability is a 2 s
+    TCP connect (Ollama: `GET /api/tags`); for `transcriber=mock` it is `true`.
+  - `PUT /api/settings` body `{<key>:<value>,...}` → `{"changed":[keys],"values":{...},"notes":[str]}`;
+    unknown keys ignored, invalid values → 400, a secret sent as `""` is kept and as `null` cleared.
+    Persisted to `SETTINGS_FILE` (`data/settings.json`), which overrides the env defaults, and
+    used by the hub from the next call on. A changed `whisper_model` (non-mock) is written to
+    `WHISPER_MODEL_FILE` and the `WHISPERLIVE_CONTAINER` is restarted via the Docker socket.
+  - `POST /api/settings/test` body `{"what":"odoo"|"ollama"|"whisperlive", <keys to try>}` →
+    `{"ok":bool,"message":str,...}` using the posted values without saving them.
+  - `POST /api/whisperlive/restart` → `{"message":str}`.
+  - `PUT /api/agent/exe` raw body = the exe → `{"agent":{...}}` (stored in `DIST_DIR`).
+- `GET /download/OfficeMeetingAgent.exe` → the uploaded agent (404 before the first upload).
+- `GET /download/config.json` → agent config pre-filled with this hub's host/port and the
+  `default_meeting` / `default_language`, `user_name` empty (the agent asks for it on first run).
 - `GET /api/meetings` → list, newest first, of
   `{"meeting_id","segments":int,"speakers":[...],"started":ts|null,"ended":ts|null,"live":bool,
   "minutes":null|{"status":"file_only"}|<finalize.json contents>}`.

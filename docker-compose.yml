@@ -1,14 +1,19 @@
 services:
   whisperlive:
     image: ghcr.io/collabora/whisperlive-gpu:latest
-    command: >
-      python run_server.py --port 9090 --backend faster_whisper
-      --faster_whisper_custom_model_path ${WHISPER_MODEL:-deepdml/faster-whisper-large-v3-turbo-ct2}
-      --batch_inference --max_clients 10 --max_connection_time 14400
-      --omp_num_threads 4 --enable_rest --rest_port 8000
+    container_name: caption-whisperlive
+    # The model comes from /config/whisper_model when the dashboard has set one, else from .env.
+    # The hub rewrites that file and restarts this container (docker socket) when the admin changes the model.
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        python run_server.py --port 9090 --backend faster_whisper
+        --faster_whisper_custom_model_path "$$(cat /config/whisper_model 2>/dev/null || echo ${WHISPER_MODEL:-deepdml/faster-whisper-large-v3-turbo-ct2})"
+        --batch_inference --max_clients 10 --max_connection_time 14400 --omp_num_threads 4
     # no published ports: only the hub talks to it, over the meetnet network
     volumes:
       - hf-cache:/root/.cache
+      - hub-config:/config
     networks: [meetnet]
     restart: unless-stopped
     deploy:
@@ -23,13 +28,14 @@ services:
     build:
       context: .
       dockerfile: server/Dockerfile
+    container_name: caption-hub
     ports:
       - "8085:8085"
     environment:
+      # .env values are only the first-run defaults; the dashboard (data/settings.json) overrides them
       TRANSCRIBER: whisperlive
       WHISPERLIVE_URL: ws://whisperlive:9090
       WHISPER_MODEL: ${WHISPER_MODEL:-deepdml/faster-whisper-large-v3-turbo-ct2}
-      DATA_DIR: /app/data/meetings
       # Ollama already runs on the Docker host; host.docker.internal resolves to it on Docker Desktop and via extra_hosts on Linux
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
@@ -38,8 +44,16 @@ services:
       ODOO_USER: ${ODOO_USER:-}
       ODOO_API_KEY: ${ODOO_API_KEY:-}
       ODOO_PROJECT_ID: ${ODOO_PROJECT_ID:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      DATA_DIR: /app/data/meetings
+      DIST_DIR: /app/data/dist
+      SETTINGS_FILE: /app/data/settings.json
+      WHISPER_MODEL_FILE: /config/whisper_model
+      WHISPERLIVE_CONTAINER: caption-whisperlive
     volumes:
-      - ./data/meetings:/app/data/meetings
+      - ./data:/app/data
+      - hub-config:/config
+      - //var/run/docker.sock:/var/run/docker.sock   # lets the dashboard restart WhisperLive after a model change
     depends_on: [whisperlive]
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -48,6 +62,7 @@ services:
 
 volumes:
   hf-cache:
+  hub-config:
 
 networks:
   meetnet:

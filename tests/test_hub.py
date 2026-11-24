@@ -15,6 +15,11 @@ def make_client(monkeypatch, tmp_path, **env):
     monkeypatch.delenv("MOCK_SCRIPT", raising=False)
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DEDUP_HOLD_S", "0")
+    monkeypatch.setenv("ADMIN_PASSWORD", "pw")
+    monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:1")
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    monkeypatch.setenv("DIST_DIR", str(tmp_path / "dist"))
+    monkeypatch.setenv("WHISPER_MODEL_FILE", str(tmp_path / "config" / "whisper_model"))
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     hub = importlib.reload(server.hub)
@@ -128,7 +133,7 @@ def test_end_flushes_and_closes(client):
 
 
 def test_transcriber_start_failure_sends_error(client, monkeypatch):
-    def boom(meeting_id, speaker, language):
+    def boom(meeting_id, speaker, language, **kw):
         raise TranscriberUnavailable("WhisperLive full")
 
     monkeypatch.setattr(client.hub, "make_transcriber", boom)
@@ -205,19 +210,85 @@ def test_finalize_empty_404(client):
     assert client.post("/api/meetings/bad%20id/finalize").status_code == 400
 
 
+AUTH = ("admin", "pw")
+
+
+def test_admin_requires_password(client):
+    assert client.get("/dashboard").status_code == 401
+    assert client.get("/api/settings", auth=("x", "wrong")).status_code == 401
+    assert client.put("/api/settings", json={}).status_code == 401
+    assert "Settings" in client.get("/dashboard", auth=AUTH).text
+
+
 def test_settings_masks_secrets_and_reports_reachability(monkeypatch, tmp_path):
     with make_client(monkeypatch, tmp_path, ODOO_URL="http://127.0.0.1:1", ODOO_DB="db", ODOO_USER="u",
-                     ODOO_API_KEY="supersecret", ODOO_PROJECT_ID="7", OLLAMA_URL="http://127.0.0.1:1",
+                     ODOO_API_KEY="supersecret", ODOO_PROJECT_ID="7",
                      SPEAKER_ALIASES='{"Ginadomenico": "Gian Domenico"}') as c:
-        r = c.get("/api/settings")
+        r = c.get("/api/settings", auth=AUTH)
         assert r.status_code == 200 and "supersecret" not in r.text
-        s = r.json()
-        assert s["odoo"] == {"url": "http://127.0.0.1:1", "db": "db", "user": "u", "api_key": "set", "project_id": 7,
-                             "configured": True, "reachable": False, "speaker_aliases": {"ginadomenico": "Gian Domenico"}}
-        assert s["llm"]["reachable"] is False and s["llm"]["model_pulled"] is False
-        assert s["transcriber"]["kind"] == "mock" and s["transcriber"]["reachable"] is True
-        assert s["dedup"]["hold_s"] == 0 and s["storage"]["meetings"] == 0 and s["live_rooms"] == {}
-        assert "Meetings" in c.get("/dashboard").text
+        v, st = r.json()["values"], r.json()["status"]
+        assert v["odoo_url"] == "http://127.0.0.1:1" and v["odoo_api_key"] is True and v["odoo_project_id"] == 7
+        assert v["speaker_aliases"] == {"Ginadomenico": "Gian Domenico"} and v["transcriber"] == "mock"
+        assert st["odoo_configured"] is True and st["odoo_reachable"] is False
+        assert st["llm_reachable"] is False and st["transcriber_reachable"] is True
+        assert st["meetings"] == 0 and st["live_rooms"] == {} and st["agent"] is None
+
+
+def test_update_settings_applies_live_and_persists(client, monkeypatch):
+    restarted = []
+    monkeypatch.setattr(client.hub, "restart_container", lambda name: restarted.append(name))
+    r = client.put("/api/settings", auth=AUTH, json={
+        "ollama_model": "qwen3.6:35b-a3b", "odoo_url": "http://127.0.0.1:1", "odoo_api_key": "k1",
+        "dedup_hold_s": 0, "default_meeting": "mazara-weekly", "whisper_model": "Systran/faster-whisper-large-v3"})
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body["changed"]) == {"ollama_model", "odoo_url", "odoo_api_key", "default_meeting", "whisper_model"}
+    assert body["values"]["odoo_api_key"] is True and "k1" not in r.text
+    assert restarted == [] and body["notes"] == []  # mock transcriber: no WhisperLive to restart
+    saved = json.loads((client.tmp / "settings.json").read_text())
+    assert saved["ollama_model"] == "qwen3.6:35b-a3b" and saved["odoo_api_key"] == "k1"
+    assert client.get("/download/config.json").json()["meeting_id"] == "mazara-weekly"
+    assert client.put("/api/settings", auth=AUTH, json={"dedup_similarity": "high"}).status_code == 400
+    assert client.put("/api/settings", auth=AUTH, json={"transcriber": "gpt"}).status_code == 400
+
+
+def test_whisper_model_change_restarts_whisperlive(client, monkeypatch):
+    restarted = []
+    monkeypatch.setattr(client.hub, "restart_container", lambda name: restarted.append(name))
+    client.put("/api/settings", auth=AUTH, json={"transcriber": "whisperlive"})
+    r = client.put("/api/settings", auth=AUTH, json={"whisper_model": "Systran/faster-whisper-medium"})
+    assert restarted == ["caption-whisperlive"] and "restarting" in r.json()["notes"][0]
+    assert (client.tmp / "config" / "whisper_model").read_text() == "Systran/faster-whisper-medium"
+    monkeypatch.setattr(client.hub, "restart_container", lambda name: (_ for _ in ()).throw(OSError("no socket")))
+    r = client.post("/api/whisperlive/restart", auth=AUTH)
+    assert "restart WhisperLive manually" in r.json()["message"]
+
+
+def test_test_connection_endpoints(client, monkeypatch):
+    r = client.post("/api/settings/test", auth=AUTH, json={"what": "odoo", "odoo_url": "http://127.0.0.1:1"})
+    assert r.json()["ok"] is False and "required" in r.json()["message"]
+    r = client.post("/api/settings/test", auth=AUTH, json={"what": "odoo", "odoo_url": "http://127.0.0.1:1",
+                                                            "odoo_db": "d", "odoo_user": "u", "odoo_api_key": "k"})
+    assert r.json()["ok"] is False and "Error" in r.json()["message"]
+    monkeypatch.setattr(client.hub, "_ollama_models", lambda url, timeout=2.0: ["qwen3.5:9b", "llama3.2:latest"])
+    r = client.post("/api/settings/test", auth=AUTH, json={"what": "ollama", "ollama_model": "llama3.2"})
+    assert r.json()["ok"] is True and r.json()["models"] == ["qwen3.5:9b", "llama3.2:latest"]
+    r = client.post("/api/settings/test", auth=AUTH, json={"what": "ollama", "ollama_model": "gemma4"})
+    assert r.json()["ok"] is False and "NOT pulled" in r.json()["message"]
+    assert client.post("/api/settings/test", auth=AUTH, json={"what": "nope"}).status_code == 400
+
+
+def test_agent_upload_and_download(client):
+    assert client.get("/download/OfficeMeetingAgent.exe").status_code == 404
+    assert client.put("/api/agent/exe", auth=AUTH, content=b"tiny").status_code == 400
+    blob = b"MZ" + bytes(range(256)) * 300
+    r = client.put("/api/agent/exe", auth=AUTH, content=blob)
+    assert r.status_code == 200 and r.json()["agent"]["size"] == len(blob)
+    d = client.get("/download/OfficeMeetingAgent.exe")
+    assert d.status_code == 200 and d.content == blob and "attachment" in d.headers["content-disposition"]
+    cfg = client.get("/download/config.json").json()
+    assert cfg["user_name"] == "" and cfg["server_ip"] == "testserver" and cfg["meeting_id"] == "daily"
+    assert client.get("/api/settings", auth=AUTH).json()["status"]["agent"]["name"] == "OfficeMeetingAgent.exe"
 
 
 def test_meeting_history_and_minutes(client, monkeypatch):

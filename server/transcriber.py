@@ -192,13 +192,15 @@ def _load_script(speaker: str) -> list[str] | None:
         return json.load(f).get(speaker)
 
 
-def make_transcriber(meeting_id: str, speaker: str, language: str) -> Transcriber:
+def make_transcriber(meeting_id: str, speaker: str, language: str, kind: str | None = None,
+                     url: str | None = None, model: str | None = None) -> Transcriber:
+    """Explicit args win (hub settings); env vars are the fallback for tools and tests."""
     lang = None if language == "auto" else language
-    if os.getenv("TRANSCRIBER", "whisperlive") == "mock":
+    if (kind or os.getenv("TRANSCRIBER", "whisperlive")) == "mock":
         return MockTranscriber(speaker, _load_script(speaker))
     return WhisperLiveTranscriber(
-        url=os.getenv("WHISPERLIVE_URL", "ws://whisperlive:9090"),
+        url=url or os.getenv("WHISPERLIVE_URL", "ws://whisperlive:9090"),
         uid=f"{meeting_id}:{speaker}:{uuid.uuid4().hex[:8]}",
         language=lang,
-        model=os.getenv("WHISPER_MODEL", "deepdml/faster-whisper-large-v3-turbo-ct2"),
+        model=model or os.getenv("WHISPER_MODEL", "deepdml/faster-whisper-large-v3-turbo-ct2"),
     )
