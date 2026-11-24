@@ -94,3 +94,30 @@ def test_muted_capture_returns_silence():
     assert cap.read(timeout=0.01) is None
     cap.stop()
     assert not streams[0].started
+
+
+def test_hublink_stops_when_name_taken_by_another_pc():
+    import threading
+    from websockets.sync.server import serve
+    from client.hub_link import HubLink, REPLACED
+
+    def handler(ws):
+        ws.send('{"type": "error", "code": "replaced", "message": "the name is now used by another connection"}')
+        ws.close(REPLACED, "replaced")
+
+    with serve(handler, "127.0.0.1", 0) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        port = server.socket.getsockname()[1]
+
+        class Silent:
+            def read(self, timeout=0.5): return None
+
+        states, msgs = [], []
+        link = HubLink(f"ws://127.0.0.1:{port}/ws/daily/Muhammad", Silent(), msgs.append, states.append)
+        t = threading.Thread(target=link.run, daemon=True)
+        t.start()
+        t.join(timeout=10)
+        server.shutdown()
+    assert not t.is_alive(), "HubLink kept reconnecting after being replaced"
+    assert msgs and msgs[0]["code"] == "replaced"
+    assert states[-1].startswith("stopped: your name is in use")

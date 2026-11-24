@@ -43,6 +43,8 @@ app = FastAPI(title="caption-hub")
 S = Settings(SETTINGS_FILE)
 rooms: dict[str, MeetingRoom] = {}
 _pending: set[asyncio.Task] = set()  # keeps hold-window tasks alive
+_finalizing: dict[str, asyncio.Lock] = {}  # one minutes run per meeting, however many people press the button
+_summary_cache: dict[str, tuple[tuple, dict]] = {}  # meeting_id -> (file stats, summary)
 _basic = HTTPBasic(auto_error=False)  # no WWW-Authenticate: the page has its own login form, browsers never prompt
 
 
@@ -111,7 +113,9 @@ async def root() -> RedirectResponse:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "transcriber": S.get("transcriber"), "rooms": len(rooms)}
+    return {"status": "ok", "transcriber": S.get("transcriber"), "rooms": len(rooms),
+            "speakers": sum(len(r.speakers) for r in rooms.values()),
+            "listeners": sum(len(r.listeners) for r in rooms.values())}
 
 
 @app.get("/captions/{meeting_id}", response_class=HTMLResponse)
@@ -163,6 +167,7 @@ async def settings() -> dict:
     model = S.get("ollama_model")
     return {
         "values": S.public(),
+        "version": S.version,
         "status": {
             "transcriber_reachable": whisper_ok,
             "whisperlive_container": WHISPERLIVE_CONTAINER,
@@ -192,6 +197,9 @@ def _apply_whisper_model(model: str) -> str:
 
 @app.put("/api/settings", dependencies=[Depends(admin)])
 async def update_settings(patch: dict) -> dict:
+    base = patch.pop("_version", None)
+    if base is not None and base != S.version:
+        raise HTTPException(409, "settings were changed by someone else since you opened them")
     try:
         changed = S.update(patch)
     except (ValueError, TypeError, json.JSONDecodeError) as e:
@@ -202,7 +210,7 @@ async def update_settings(patch: dict) -> dict:
     if "transcriber" in changed or "whisperlive_url" in changed:
         notes.append("new connections use the new transcriber; running streams keep the old one")
     log.info("settings changed: %s", changed)
-    return {"changed": changed, "values": S.public(), "notes": notes}
+    return {"changed": changed, "values": S.public(), "version": S.version, "notes": notes}
 
 
 @app.post("/api/settings/test", dependencies=[Depends(admin)])
@@ -279,22 +287,41 @@ async def download_config(request: Request) -> dict:
 
 # --- meetings -----------------------------------------------------------------------------------
 
+def _stat(p: Path) -> tuple | None:
+    try:
+        st = p.stat()
+        return st.st_mtime_ns, st.st_size
+    except FileNotFoundError:
+        return None
+
+
 def _meeting_summary(path: Path) -> dict:
+    """Summary of one meeting, re-read only when one of its files changed (every admin polls this)."""
     mid = path.stem
-    segs = MeetingRoom(mid, DATA_DIR).history()  # ponytail: re-reads every jsonl per request; fine for an office
-    ts = [s["ts"] for s in segs]
-    info = DATA_DIR / f"{mid}.finalize.json"
-    if info.exists():
-        minutes = json.loads(info.read_text(encoding="utf-8"))
+    info, md = DATA_DIR / f"{mid}.finalize.json", DATA_DIR / f"{mid}.minutes.md"
+    key = (_stat(path), _stat(info), _stat(md))
+    hit = _summary_cache.get(mid)
+    if hit and hit[0] == key:
+        summary = hit[1]
     else:
-        minutes = {"status": "file_only"} if (DATA_DIR / f"{mid}.minutes.md").exists() else None
-    return {"meeting_id": mid, "segments": len(segs), "speakers": sorted({s["speaker"] for s in segs}),
-            "started": min(ts, default=None), "ended": max(ts, default=None), "live": mid in rooms, "minutes": minutes}
+        segs = MeetingRoom(mid, DATA_DIR).history()
+        ts = [s["ts"] for s in segs if isinstance(s.get("ts"), (int, float))]
+        try:
+            minutes = json.loads(info.read_text(encoding="utf-8")) if key[1] else None
+        except ValueError:
+            minutes = None
+        if minutes is None and key[2]:
+            minutes = {"status": "file_only"}
+        summary = {"meeting_id": mid, "segments": len(segs), "speakers": sorted({str(s["speaker"]) for s in segs}),
+                   "started": min(ts, default=None), "ended": max(ts, default=None), "minutes": minutes}
+        _summary_cache[mid] = (key, summary)
+    lock = _finalizing.get(mid)
+    return {**summary, "live": mid in rooms, "finalizing": bool(lock and lock.locked())}
 
 
 @app.get("/api/meetings")
 async def meetings() -> list[dict]:
-    rows = [_meeting_summary(p) for p in DATA_DIR.glob("*.jsonl")]
+    rows = [_meeting_summary(p) for p in DATA_DIR.glob("*.jsonl") if MEETING_ID_RE.fullmatch(p.stem)]
     return sorted(rows, key=lambda r: r["ended"] or 0, reverse=True)
 
 
@@ -313,8 +340,23 @@ async def minutes(meeting_id: str) -> str:
 
 @app.post("/api/meetings/{meeting_id}/finalize")
 async def finalize(meeting_id: str) -> dict:
-    """Consolidate the meeting into Markdown minutes (Ollama, with transcript fallback) and publish."""
+    """Write the minutes once per press; presses that arrive while a run is going join that run's result."""
     _valid_id(meeting_id)
+    lock = _finalizing.setdefault(meeting_id, asyncio.Lock())
+    if lock.locked():
+        async with lock:  # someone else is already writing these minutes: wait for them
+            pass
+        info = DATA_DIR / f"{meeting_id}.finalize.json"
+        md = DATA_DIR / f"{meeting_id}.minutes.md"
+        if info.exists() and md.exists():
+            rec = json.loads(info.read_text(encoding="utf-8"))
+            return {"meeting_id": meeting_id, "markdown": md.read_text(encoding="utf-8"), "llm": rec["llm"],
+                    "llm_error": rec.get("llm_error"), "saved_to": str(md), "odoo": rec["odoo"], "joined": True}
+    async with lock:
+        return await _finalize(meeting_id)
+
+
+async def _finalize(meeting_id: str) -> dict:
     segs = MeetingRoom(meeting_id, DATA_DIR).history()
     if not segs:
         raise HTTPException(404, "no completed captions for this meeting")
@@ -365,11 +407,17 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
         await _close(ws, 1008)
         return
     room = get_room(meeting_id)
-    if not room.add_speaker(speaker, ws):
-        await ws.send_json({"type": "error", "message": f"speaker '{speaker}' already connected"})
-        await _close(ws, 1008)
-        _drop_if_empty(room)
-        return
+    old = room.add_speaker(speaker, ws)
+    if old is not None:
+        # Newest connection wins: usually the same PC reconnecting after a network drop while the hub still
+        # holds the dead socket. If it is a second PC with the same name, that one is told and stops (4001).
+        log.info("%s: %s reconnected, replacing the previous connection", meeting_id, speaker)
+        try:
+            await asyncio.wait_for(old.send_json({"type": "error", "code": "replaced", "message":
+                f"the name '{speaker}' is now used by another connection to meeting '{meeting_id}'"}), 1.0)
+        except Exception:
+            pass
+        await _close(old, 4001)
 
     clock = StreamClock()
 
@@ -421,7 +469,7 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
     finally:
         if transcriber is not None:
             await transcriber.close()
-        room.remove_speaker(speaker)
+        room.remove_speaker(speaker, ws)
         await _close(ws)
         await room.broadcast(room.roster())
         _drop_if_empty(room)

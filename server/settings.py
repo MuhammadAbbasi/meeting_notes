@@ -56,6 +56,7 @@ def _coerce(key: str, value: Any) -> Any:
 class Settings:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self.version = 0  # bumped on every saved change; lets two admins editing at once detect each other
         self.values: dict[str, Any] = {}
         for key, (env, default, _) in FIELDS.items():
             raw = os.getenv(env)
@@ -73,15 +74,14 @@ class Settings:
 
     def update(self, patch: dict[str, Any]) -> list[str]:
         """Apply and persist known keys; a secret sent as "" keeps its value, None clears it. Returns changed keys."""
-        changed = []
-        for key, value in patch.items():
-            if key not in FIELDS or (key in SECRETS and value == ""):
-                continue
-            new = _coerce(key, value)
-            if new != self.values[key]:
-                self.values[key] = new
-                changed.append(key)
+        # validate everything first: one bad field must not leave the others half-applied
+        coerced = {k: _coerce(k, v) for k, v in patch.items() if k in FIELDS and not (k in SECRETS and v == "")}
+        changed = [k for k, v in coerced.items() if v != self.values[k]]
         if changed:
+            self.values.update({k: coerced[k] for k in changed})
+            self.version += 1
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(self.values, indent=2), encoding="utf-8")
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.values, indent=2), encoding="utf-8")
+            tmp.replace(self.path)  # atomic: a crash never leaves a torn settings file
         return changed

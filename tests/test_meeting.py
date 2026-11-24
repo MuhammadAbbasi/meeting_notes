@@ -1,3 +1,4 @@
+from pathlib import Path
 import asyncio
 import json
 
@@ -53,10 +54,10 @@ def test_room_record_and_history(tmp_path):
     assert MeetingRoom("empty", tmp_path).history() == []
 
 
-def test_room_duplicate_speaker(tmp_path):
+def test_room_roster_after_reconnect(tmp_path):
     r = MeetingRoom("daily", tmp_path)
-    assert r.add_speaker("A", object()) is True
-    assert r.add_speaker("A", object()) is False
+    r.add_speaker("A", object())
+    r.add_speaker("A", object())  # reconnect replaces, never duplicates
     assert r.roster() == {"type": "roster", "meeting_id": "daily", "speakers": ["A"]}
 
 
@@ -86,3 +87,39 @@ def test_regexes():
     assert not MEETING_ID_RE.fullmatch("../etc") and not MEETING_ID_RE.fullmatch("x y")
     assert SPEAKER_RE.fullmatch("Gian Domenico") and SPEAKER_RE.fullmatch("Remote-Call")
     assert not SPEAKER_RE.fullmatch("a/b") and not SPEAKER_RE.fullmatch("")
+
+
+def test_broadcast_drops_stalled_and_broken_clients_without_delaying_others():
+    import asyncio, time
+
+    class Ok:
+        def __init__(self): self.got = []
+        async def send_json(self, m): self.got.append(m)
+
+    class Stalled:
+        async def send_json(self, m): await asyncio.sleep(60)
+
+    class Broken:
+        async def send_json(self, m): raise RuntimeError("socket gone")
+
+    room = MeetingRoom("daily", Path("."))
+    ok_l, ok_s, stalled, broken = Ok(), Ok(), Stalled(), Broken()
+    room.listeners |= {ok_l, stalled, broken}
+    room.add_speaker("Muhammad", ok_s)
+    room.add_speaker("Gabriele", stalled)
+    t0 = time.monotonic()
+    asyncio.run(room.broadcast({"type": "x"}, timeout=0.2))
+    assert time.monotonic() - t0 < 1.0
+    assert ok_l.got == ok_s.got == [{"type": "x"}]
+    assert room.listeners == {ok_l} and list(room.speakers) == ["Muhammad"]
+
+
+def test_add_speaker_returns_replaced_and_remove_is_guarded():
+    room = MeetingRoom("daily", Path("."))
+    a, b = object(), object()
+    assert room.add_speaker("Muhammad", a) is None
+    assert room.add_speaker("Muhammad", b) is a
+    room.remove_speaker("Muhammad", a)          # stale handler cleaning up late
+    assert room.speakers["Muhammad"] is b
+    room.remove_speaker("Muhammad", b)
+    assert room.speakers == {}

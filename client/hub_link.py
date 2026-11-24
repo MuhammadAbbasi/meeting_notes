@@ -10,6 +10,9 @@ from urllib.parse import quote
 from websockets.sync.client import connect
 
 
+REPLACED = 4001  # hub close code: this speaker name was taken over by a newer connection
+
+
 def backoff_delays() -> Iterator[float]:
     d = 1
     while True:
@@ -47,6 +50,7 @@ class HubLink:
     def run(self) -> None:
         delays = backoff_delays()
         while not self._stop.is_set():
+            ws = None
             try:
                 with connect(self.url, max_size=None) as ws:
                     self._ws = ws
@@ -58,6 +62,10 @@ class HubLink:
             except Exception as e:  # refused, dropped, reset: all mean "retry"
                 self.on_state(f"reconnecting ({type(e).__name__})")
             self._ws = None
+            if ws is not None and ws.close_code == REPLACED:
+                # another PC joined this meeting with the same name: retrying would kick it out in turn
+                self.on_state("stopped: your name is in use on another PC (change it in config.json)")
+                return
             if self._stop.is_set():
                 break
             time.sleep(next(delays))

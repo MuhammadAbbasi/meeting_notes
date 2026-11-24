@@ -114,6 +114,8 @@ class CaptionOverlay:
             elif f["type"] == "retract":
                 self._partials.pop(f["speaker"], None)
                 changed = True
+            elif f["type"] == "error":
+                self.status.configure(text=f["message"])
             elif f["type"] == "finalized":
                 self.status.configure(text=f"minutes ready ({'LLM' if f['llm'] else 'transcript'}, {f['odoo_status']})")
             elif f["type"] == "caption":

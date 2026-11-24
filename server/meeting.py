@@ -1,6 +1,7 @@
 """Meeting room state, per-stream audio clock and JSONL persistence. See CONTRACTS.md §1."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -74,14 +75,17 @@ class MeetingRoom:
         self.listeners: set[Any] = set()
         self.dedup = dedup or CrossTalkFilter()
 
-    def add_speaker(self, name: str, ws: Any) -> bool:
-        if name in self.speakers:
-            return False
+    def add_speaker(self, name: str, ws: Any) -> Any:
+        """Register `ws` for `name`; returns the connection it replaced (a reconnect after a network drop,
+        or another PC using the same name), or None."""
+        old = self.speakers.get(name)
         self.speakers[name] = ws
-        return True
+        return old
 
-    def remove_speaker(self, name: str) -> None:
-        self.speakers.pop(name, None)
+    def remove_speaker(self, name: str, ws: Any = None) -> None:
+        """Remove `name`, but only if it is still `ws` (a replaced connection must not evict its successor)."""
+        if ws is None or self.speakers.get(name) is ws:
+            self.speakers.pop(name, None)
 
     def add_listener(self, ws: Any) -> None:
         self.listeners.add(ws)
@@ -92,17 +96,21 @@ class MeetingRoom:
     def roster(self) -> dict:
         return {"type": "roster", "meeting_id": self.meeting_id, "speakers": list(self.speakers)}
 
-    async def broadcast(self, msg: dict) -> None:
-        for name, ws in list(self.speakers.items()):
-            try:
-                await ws.send_json(msg)
-            except Exception:
-                self.speakers.pop(name, None)
-        for ws in list(self.listeners):
-            try:
-                await ws.send_json(msg)
-            except Exception:
-                self.listeners.discard(ws)
+    async def broadcast(self, msg: dict, timeout: float = 2.0) -> None:
+        """Send to everyone at once; a client that fails or stalls longer than `timeout` is dropped,
+        so one dead Wi-Fi laptop never delays captions for the rest of the room."""
+        targets = [(name, ws) for name, ws in self.speakers.items()] + [(None, ws) for ws in self.listeners]
+        if not targets:
+            return
+        results = await asyncio.gather(*(asyncio.wait_for(ws.send_json(msg), timeout) for _, ws in targets),
+                                       return_exceptions=True)
+        for (name, ws), res in zip(targets, results):
+            if isinstance(res, BaseException):
+                if name is not None:
+                    if self.speakers.get(name) is ws:
+                        self.speakers.pop(name, None)
+                else:
+                    self.listeners.discard(ws)
 
     def record(self, caption: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -111,7 +119,16 @@ class MeetingRoom:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     def history(self) -> list[dict]:
+        """Persisted captions; a torn or corrupt line (crash mid-write, manual edit) is skipped, not fatal."""
         if not self.path.exists():
             return []
-        with self.path.open(encoding="utf-8") as f:
-            return [json.loads(line) for line in f if line.strip()]
+        rows = []
+        with self.path.open(encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict) and "speaker" in row and "text" in row:
+                    rows.append(row)
+        return rows

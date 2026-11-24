@@ -93,16 +93,21 @@ def test_caption_broadcast_to_listener_and_other_speaker(client):
     assert (client.tmp / "daily.jsonl").exists()
 
 
-def test_duplicate_speaker_refused(client):
+def test_same_name_reconnect_takes_over(client):
+    """A PC that reconnects after a network drop must get in at once; the stale connection is told and closed."""
     with client.websocket_connect("/ws/daily/Muhammad") as first:
         next_of(first, "roster")
         with client.websocket_connect("/ws/daily/Muhammad") as second:
-            err = second.receive_json()
-            assert err["type"] == "error" and "Muhammad" in err["message"]
-            with pytest.raises(WebSocketDisconnect):
-                second.receive_json()
-        first.send_bytes(pcm(2.0))
-        assert next_of(first, "caption", completed=True)["text"] == "Muhammad segment 1"
+            err = next_of(first, "error")
+            assert err["code"] == "replaced" and "Muhammad" in err["message"]
+            with pytest.raises(WebSocketDisconnect) as closed:
+                while True:
+                    first.receive_json()
+            assert closed.value.code == 4001
+            next_of(second, "ready")
+            second.send_bytes(pcm(2.0))  # the old handler's cleanup must not have evicted the new one
+            assert next_of(second, "caption", completed=True)["text"] == "Muhammad segment 1"
+            assert client.get("/health").json()["speakers"] == 1
 
 
 @pytest.mark.parametrize("path", ["/ws/x%20y/A", "/ws/daily/a%3Ab", "/listen/bad%20id"])
@@ -321,3 +326,58 @@ def test_viewer_served(client):
     assert "/listen/daily" in r.text
     assert client.get("/captions/bad%20id").status_code == 400
     assert client.get("/api/meetings/bad%20id/segments").status_code == 400
+
+
+def test_settings_conflict_between_two_admins(client):
+    v0 = client.get("/api/settings", auth=AUTH).json()["version"]
+    a = client.put("/api/settings", auth=AUTH, json={"_version": v0, "ollama_model": "gemma4"})
+    assert a.status_code == 200 and a.json()["version"] == v0 + 1
+    b = client.put("/api/settings", auth=AUTH, json={"_version": v0, "ollama_model": "llama3.2"})  # stale form
+    assert b.status_code == 409 and "someone else" in b.json()["detail"]
+    assert client.get("/api/settings", auth=AUTH).json()["values"]["ollama_model"] == "gemma4"
+    bad = client.put("/api/settings", auth=AUTH, json={"ollama_model": "x", "dedup_similarity": "high"})
+    assert bad.status_code == 400  # all-or-nothing: the valid field in a rejected save is not applied either
+    assert client.get("/api/settings", auth=AUTH).json()["values"]["ollama_model"] == "gemma4"
+
+
+def test_meeting_list_survives_noisy_files(client):
+    d = client.tmp
+    (d / "noisy.jsonl").write_text("\n".join([
+        '{"speaker": "Muhammad", "text": "ciao a tutti", "start": 0, "end": 1, "ts": 1700000000.0, "rms": 0.1}',
+        '{"speaker": "Gabriele", "text": "half a line that never fini',  # torn write
+        'not json at all',
+        '[1, 2, 3]',
+        '{"speaker": "Ginadomenico", "text": "venerdì <b>ok</b>", "start": 1, "end": 2, "ts": "bad", "rms": 0}',
+        '', '']), encoding="utf-8")
+    (d / "noisy.finalize.json").write_text("{corrupt", encoding="utf-8")
+    (d / "bad name!.jsonl").write_text("{}", encoding="utf-8")
+    rows = client.get("/api/meetings").json()
+    assert [r["meeting_id"] for r in rows] == ["noisy"]
+    r = rows[0]
+    assert r["segments"] == 2 and r["speakers"] == ["Ginadomenico", "Muhammad"] and r["started"] == 1700000000.0
+    assert r["minutes"] is None and r["finalizing"] is False
+    with (d / "noisy.jsonl").open("a", encoding="utf-8") as f:   # cache must notice new captions
+        f.write('{"speaker": "Gabriele", "text": "x", "start": 2, "end": 3, "ts": 1700000005.0, "rms": 0.1}\n')
+    assert client.get("/api/meetings").json()[0]["segments"] == 3
+
+
+def test_finalize_runs_once_when_two_people_press(client, monkeypatch):
+    import asyncio, time
+    import httpx
+    calls = []
+
+    def slow_synth(segs, mid, url, model):
+        calls.append(mid)
+        time.sleep(0.6)
+        return CANNED_MD
+    monkeypatch.setattr(client.hub, "synthesize", slow_synth)
+    (client.tmp / "daily.jsonl").write_text(
+        '{"speaker": "Muhammad", "text": "hello", "start": 0, "end": 1, "ts": 1.0, "rms": 0.1}\n', encoding="utf-8")
+
+    async def both():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.hub.app), base_url="http://t") as h:
+            return await asyncio.gather(h.post("/api/meetings/daily/finalize"), h.post("/api/meetings/daily/finalize"))
+    a, b = asyncio.run(both())
+    assert a.status_code == b.status_code == 200 and calls == ["daily"]
+    assert a.json()["markdown"] == b.json()["markdown"] == CANNED_MD
+    assert sum(bool(r.json().get("joined")) for r in (a, b)) == 1
