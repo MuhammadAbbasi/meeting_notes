@@ -128,8 +128,9 @@ function turnFor(speaker, ts) {
   return lines;
 }
 function render(c) {
+  // an in-progress sentence updates in place (many times a second with the real recognizer), even if
+  // someone else spoke meanwhile; moving it would leave empty name headers behind
   let p = partials.get(c.speaker);
-  if (p && p.closest(".turn") !== lastTurn) { p.remove(); p = null; partials.delete(c.speaker); }  // someone spoke in between
   if (!p) { p = document.createElement("p"); turnFor(c.speaker, c.ts).append(p); }
   p.textContent = c.text;
   p.className = c.completed ? "" : "partial";
