@@ -413,7 +413,8 @@ dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2
             <div class="tf"><input name="default_meeting" id="f-dm" placeholder=" "><label for="f-dm">Meeting name</label><div class="help">Same name, same captions. Letters, digits, - and _</div></div>
             <div class="tf"><select name="default_language" id="f-dl">
               <option value="auto">Detect automatically</option><option value="it">Italian</option><option value="en">English</option>
-              <option value="de">German</option><option value="fr">French</option><option value="es">Spanish</option></select><label for="f-dl">Language</label></div>
+              <option value="de">German</option><option value="fr">French</option><option value="es">Spanish</option></select><label for="f-dl">Language</label>
+              <div class="help">Pick the language people speak. Automatic detection can transcribe in the wrong language, or translate, when several people talk at once.</div></div>
           </div>
         </div>
 
@@ -557,6 +558,7 @@ function computeIssues() {
   else if (!s.llm_model_pulled) out.push({ lvl: "warn", t: `The model ${v.ollama_model} isn't installed`, d: "Pick one of the installed models in Settings, or install it on the server with ollama pull.", acts: [["Choose a model", go("settings")]] });
   if (!s.odoo_configured) out.push({ lvl: "info", t: "Odoo isn't set up", d: "Minutes stay on the hub. Add the Odoo address and an API key to publish them as tasks.", acts: [["Set up Odoo", go("settings")]] });
   else if (!s.odoo_reachable) out.push({ lvl: "err", t: "Odoo isn't answering", d: `Minutes are kept on the hub until it's back. Nothing answers at ${v.odoo_url}.`, acts: [["Open settings", go("settings")]] });
+  if (v.default_language === "auto") out.push({ lvl: "info", t: "New computers detect the language automatically", d: "Tested on this server: with several people talking at once, automatic detection turned Italian into English. Choose the language people speak, and ask each person to set theirs in the agent.", acts: [["Choose a language", go("settings")]] });
   if (!s.agent) out.push({ lvl: "warn", t: "No agent to download yet", d: "New computers can't join until someone uploads the agent.", acts: [["Upload", go("install")]] });
   return out;
 }

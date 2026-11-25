@@ -11,6 +11,9 @@ first, then the code.
 
 - `meeting_id`: `^[A-Za-z0-9_-]{1,64}$`. `speaker`: `^[A-Za-z0-9 _.-]{1,40}$` (URL-encoded).
   Anything else: the hub closes the WebSocket with code 1008 right after accepting it.
+- **Order:** `ready` is sent once the transcriber accepted the stream. Other room frames (`roster`,
+  `caption`, `retract`) can arrive before it when several people join at once; clients must not assume
+  `ready` is the first frame.
 - **Same name twice:** the newest connection wins. The previous one (usually the same PC whose
   network dropped, while the hub still held the dead socket) receives
   `{"type":"error","code":"replaced","message":str}` and is closed with code **4001**. A client

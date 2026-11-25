@@ -51,10 +51,13 @@ def add_noise(pcm: np.ndarray, sigma: float, seed: int) -> np.ndarray:
     return np.clip(pcm + rng.normal(0, sigma, len(pcm)), -1, 1).astype(np.float32)
 
 
-async def speaker(hub: str, meeting: str, name: str, pcm: np.ndarray, log: list) -> None:
-    async with connect(f"{hub}/ws/{meeting}/{quote(name)}?lang=auto", max_size=None) as ws:
-        ready = json.loads(await ws.recv())
-        assert ready["type"] == "ready", ready
+async def speaker(hub: str, meeting: str, name: str, pcm: np.ndarray, log: list, lang: str = "auto") -> None:
+    async with connect(f"{hub}/ws/{meeting}/{quote(name)}?lang={lang}", max_size=None) as ws:
+        while True:  # other people's roster updates can arrive before our own "ready" (CONTRACTS 1.1)
+            ready = json.loads(await ws.recv())
+            assert ready["type"] != "error", ready
+            if ready["type"] == "ready":
+                break
         t0 = time.monotonic()
         for i in range(0, len(pcm), BLOCK):
             await ws.send(pcm[i:i + BLOCK].tobytes())
@@ -101,7 +104,7 @@ async def listener(hub: str, meeting: str, captions: list, stop: asyncio.Event, 
 
 async def main(a: argparse.Namespace) -> int:
     names = [n.strip() for n in a.speakers.split(",") if n.strip()]
-    pcm = load_wav(a.wav) if a.wav else None
+    wavs = [load_wav(w) for w in a.wav.split(",")] if a.wav else []  # one file per speaker, cycled
     print(f"meeting={a.meeting} speakers={names} hub={a.hub}")
     captions: list = []
     stop = asyncio.Event()
@@ -113,12 +116,13 @@ async def main(a: argparse.Namespace) -> int:
     quiet = {q.strip() for q in a.quiet.split(",") if q.strip()}
 
     def audio_for(i: int, n: str) -> np.ndarray:
-        base = pcm if pcm is not None else tone(a.seconds, 220 + 110 * i)
+        base = wavs[i % len(wavs)] if wavs else tone(a.seconds, 220 + 110 * i)
         if n in quiet:
             base = base * 0.1  # a mic hearing someone else across the room
         return add_noise(base, a.noise, seed=i)
 
-    await asyncio.gather(*(speaker(a.hub, a.meeting, n, audio_for(i, n), own[n]) for i, n in enumerate(names)))
+    langs = a.langs.split(",")
+    await asyncio.gather(*(speaker(a.hub, a.meeting, n, audio_for(i, n), own[n], langs[i % len(langs)]) for i, n in enumerate(names)))
     await asyncio.sleep(a.settle)  # > hub DEDUP_HOLD_S so held captions are decided
     stop.set()
     await lst
@@ -169,8 +173,9 @@ if __name__ == "__main__":
     p.add_argument("--hub", default="ws://127.0.0.1:8085")
     p.add_argument("--meeting", default=f"sim-{int(time.time())}")
     p.add_argument("--speakers", default="Muhammad,Gabriele,Ginadomenico")
-    p.add_argument("--wav", default=None)
+    p.add_argument("--wav", default=None, help="WAV file, or comma-separated files assigned to speakers in order")
     p.add_argument("--seconds", type=float, default=8.0)
+    p.add_argument("--langs", default="auto", help="language per speaker, comma-separated and cycled (auto, it, en...)")
     p.add_argument("--quiet", default="", help="comma-separated speakers whose audio is 10x quieter (bleed)")
     p.add_argument("--noise", type=float, default=0.0, help="gaussian noise sigma added to all audio, e.g. 0.02")
     p.add_argument("--expect-suppressed", default="", help="speakers that must have 0 persisted captions")
