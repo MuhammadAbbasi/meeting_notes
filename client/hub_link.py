@@ -13,6 +13,17 @@ from websockets.sync.client import connect
 REPLACED = 4001  # hub close code: this speaker name was taken over by a newer connection
 
 
+def friendly_state(state: str, meeting: str, paused: bool = False) -> str:
+    """What the caption strip says about the connection, in words a person understands."""
+    if state == "connected":
+        return f"Paused · {meeting}" if paused else f"Live · {meeting}"
+    if state.startswith("reconnecting"):
+        return "Reconnecting to the hub…"
+    if state == "stopped":
+        return "Stopped. Start it again from the tray icon."
+    return state[:1].upper() + state[1:]
+
+
 def backoff_delays() -> Iterator[float]:
     d = 1
     while True:

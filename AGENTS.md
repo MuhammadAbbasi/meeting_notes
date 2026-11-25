@@ -20,7 +20,7 @@ Office meeting captions + minutes: Windows agent → FastAPI hub → WhisperLive
 | `server/static/captions.html` | public live caption viewer | |
 | `server/whisperlive.Dockerfile` | upstream WhisperLive image + CUDA 12 cuBLAS/cuDNN (upstream ships CUDA 13, ctranslate2 needs 12) | |
 | `client/` | Windows agent: `office_agent.py` (Agent class), `audio_capture.py` (mic + WASAPI loopback), `hub_link.py`, `overlay_ui.py` (tk strip), `tray.py` (pystray), `setup_dialog.py`, `build_exe.bat` | |
-| `tests/` | pytest (hub via Starlette `TestClient`, mock transcriber) + `simulate_multi_user_meeting.py` (real hub, N speakers, WAV or tones, noise, bleed, finalize) | |
+| `tests/` | pytest (hub via Starlette `TestClient`, mock transcriber) + `simulate_multi_user_meeting.py` (real hub, N speakers, WAV or tones, noise, bleed, extra screens with delivery delay, finalize) + `noisy_meetings.py` (messy data set for UI work) | |
 | `docs/superpowers/` | design spec and the two implementation plans (all steps done) | History, not instructions |
 
 ## Rules
@@ -37,7 +37,15 @@ Office meeting captions + minutes: Windows agent → FastAPI hub → WhisperLive
    (`"supersecret" not in r.text`). Admin endpoints carry `dependencies=[Depends(admin)]`.
 6. **Minimal code** ("ponytail" style): deliberate shortcuts are marked with a `# ponytail:` comment naming
    the ceiling and the upgrade path. Don't add abstractions for one caller.
-7. **Commits**: conventional prefix (`feat(server):`, `fix(compose):`, `docs:`), body says what was
+7. **Multi-user by default**: anything shared (settings, finalize, rooms) must stay correct with
+   several admins and dozens of screens at once. Pattern used so far: optimistic `_version` + 409 for
+   settings, one asyncio lock per meeting for finalize, concurrent broadcast with a per-client timeout,
+   newest-wins speaker names (close 4001). Test it with `--listeners N` and two browser tabs.
+8. **UI is Google Material 3**: tokens and components live in `server/static/dashboard.html` (drawer,
+   outlined fields with floating labels, filled/tonal/text buttons, chips, banners, snackbar, dialog);
+   `captions.html` reuses the same tokens. Plain-language copy, sentence case, no jargon in messages.
+   Before shipping UI changes, load `tests/noisy_meetings.py` data and check desktop and 412 px width.
+9. **Commits**: conventional prefix (`feat(server):`, `fix(compose):`, `docs:`), body says what was
    verified. Push to `main` on `github.com/MuhammadAbbasi/meeting_notes`.
 
 ## Daily commands
@@ -69,6 +77,9 @@ Windows text-to-speech makes usable test WAVs (16 kHz mono) when no recording is
 - Dev box `192.168.10.25` (no usable GPU): everything runs with `TRANSCRIBER=mock`; Python 3.14 in
   `.venv`, Python 3.12 (Astral) in `client\.venv312` for the exe build.
 - Speakers used in scripts/tests: Muhammad, Gabriele, Ginadomenico (real colleagues' first names).
+- PyInstaller one-file exe = two processes (bootloader + child). Stopping only one leaves the agent
+  streaming; end both. A forgotten test agent once sent 18 h of an idle mic to the server, which is how
+  the phantom-caption problem (and `noise_floor_rms`) was found.
 
 ## Open items
 

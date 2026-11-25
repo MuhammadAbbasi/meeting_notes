@@ -62,11 +62,23 @@ still works over SSH for config-only changes (`.env`, compose).
 
 ### Admin dashboard
 
-`http://<hub-ip>:8085/dashboard`, log in with the `ADMIN_PASSWORD` from `.env` (own login form, kept for the browser session). It is the
-place to configure the system after the first start; `.env` only provides first-run defaults.
+`http://<hub-ip>:8085/dashboard` (the hub address alone redirects there). Sign in with the
+`ADMIN_PASSWORD` from `.env`; it is kept for the browser session. Google Material style: Overview,
+Meetings, Settings and Install the agent in a navigation drawer (a bottom bar on phones), banners for
+anything that needs attention with the button that fixes it, snackbars for results. It is the place
+to configure the system after the first start; `.env` only provides first-run defaults.
+
+- **Overview** says in one sentence whether the next meeting will work, shows each service, and
+  lists what needs attention (test mode on, minutes writer unreachable, Odoo not set up, no agent
+  uploaded) with a direct fix.
+- **Several admins at once** is safe: each save sends only the fields that person changed; edits to
+  different fields merge, and only a clash on the same field asks "Keep mine / Load theirs".
+  "Write minutes" runs once per meeting however many people press it, and everyone watching gets a
+  snackbar when the minutes are ready. Open dashboards poll every 20 s and pause in background tabs.
 
 - **Settings**, saved in `data/settings.json` and applied to every workstation the moment you
-  click *Save* (no restart): transcriber mode and URL, **Whisper model** (saving a different one
+  click *Save* (no restart): **background noise level** (stops phantom captions such as "Thank you."
+  over silence), transcriber mode and URL, **Whisper model** (saving a different one
   rewrites the model file and restarts the WhisperLive container through the Docker socket; the
   first use of a new model downloads it), **Ollama** URL and model (with the list of models
   actually present on that Ollama), **Odoo** URL / database / user / API key / project id and
@@ -145,7 +157,11 @@ python client\office_agent.py
   called `Remote-Call`, so remote participants in any browser/app are captured. Only one person
   in the room should enable it, or the remote side will be heard twice.
 - **Browser viewer**: `http://<hub-ip>:8085/captions/<meeting-id>` shows live captions and the
-  history for anyone without the agent (tablet, meeting-room PC).
+  history for anyone without the agent (tablet, meeting-room TV): people's avatars, a larger-text
+  button, a "New captions" button when you scroll back, join and leave notices, and automatic
+  reconnection that reloads anything said while it was offline.
+- **Same name on two PCs**: the newest connection wins (a reconnect after a Wi-Fi drop gets straight
+  back in); the older PC's strip says "your name is in use on another PC" and stops retrying.
 
 ### Finalize
 
@@ -175,6 +191,13 @@ $env:MOCK_SCRIPT="tests\mock_script_bleed.json"   # restart the hub after changi
 .venv\Scripts\python tests\simulate_multi_user_meeting.py --speakers Muhammad,Ginadomenico `
     --quiet Ginadomenico --noise 0.02 --expect-suppressed Ginadomenico --finalize
 
+# many people at once: 8 noisy speakers, one bleeding mic, 30 extra caption screens (all must get every caption)
+.venv\Scripts\python tests\simulate_multi_user_meeting.py --speakers Muhammad,Gabriele,Ginadomenico,Anna,Luca,Sara,Paolo,Remote-Call `
+    --quiet Ginadomenico --noise 0.03 --seconds 8 --listeners 30 --expect-suppressed Ginadomenico
+
+# messy data for the dashboard and viewer: 3-hour meeting, corrupt lines, HTML-like text, failed minutes...
+.venv\Scripts\python tests\noisy_meetings.py C:\tmp\noisy ; $env:DATA_DIR="C:\tmp\noisy"   # then start the hub
+
 # real speech against the GPU host, with added noise
 .venv\Scripts\python tests\simulate_multi_user_meeting.py --hub ws://192.168.10.17:8085 --wav meeting.wav --noise 0.02
 ```
@@ -195,6 +218,9 @@ Layout: `server/` hub, transcriber adapters, dedup, Ollama, Odoo · `client/` Wi
 | Finalize says `transcript` instead of `LLM` | Ollama down, model not pulled, or **GPU memory full**: the hub log shows the Ollama error. On the office host, LM Studio / ComfyUI holding a model leaves Ollama with `cudaMalloc failed: out of memory`; unload them (a 9B model needs ~6 GB free) or pick a smaller model in the dashboard. `ollama list` on the host shows what is pulled |
 | Finalize says `saved_locally` | Odoo not configured or unreachable; see hub log, file is in `data/meetings/`. The dashboard shows the reason on hover of the red `local` tag |
 | Dashboard card red | the hub cannot open a TCP connection to that URL: container down, wrong URL, or firewall |
+| Captions show things nobody said ("Thank you.", "감사합니다", "Bye.") | Whisper inventing words over room noise: raise *Background noise level* in Settings (on real data 0.005 removed 58% of them and 0.008 removed 69%, with no real speech lost) |
+| Strip says "your name is in use on another PC" | two PCs joined the same meeting with the same name; change `user_name` in one `config.json` |
+| A stopped agent still sends audio | the one-file exe runs as two processes; quit from the tray icon, or end both `OfficeMeetingAgent.exe` processes in Task Manager |
 | Dashboard login form says `admin disabled` | `ADMIN_PASSWORD` missing in `.env`; add it and `docker compose up -d` |
 | `/download/OfficeMeetingAgent.exe` → `no agent uploaded yet` | nobody has built and uploaded the exe yet: section 2, option A |
 | WhisperLive log: `Unexpected error: <ServerConnection ...>` every 20 s | harmless: the dashboard's reachability probe opens and closes a TCP connection |

@@ -11,6 +11,10 @@ first, then the code.
 
 - `meeting_id`: `^[A-Za-z0-9_-]{1,64}$`. `speaker`: `^[A-Za-z0-9 _.-]{1,40}$` (URL-encoded).
   Anything else: the hub closes the WebSocket with code 1008 right after accepting it.
+- **Same name twice:** the newest connection wins. The previous one (usually the same PC whose
+  network dropped, while the hub still held the dead socket) receives
+  `{"type":"error","code":"replaced","message":str}` and is closed with code **4001**. A client
+  closed with 4001 must not reconnect automatically (another PC is using that name).
 - `lang` default `auto` (WhisperLive language detection). Loopback audio is a second
   connection from the same client with `speaker=Remote-Call`.
 - **Client → hub, binary frames:** raw PCM, `float32` little-endian, 16 000 Hz, mono,
@@ -45,27 +49,33 @@ sends nothing.
 
 ### 1.3 HTTP
 
-- `GET /health` → `{"status":"ok","transcriber":"mock"|"whisperlive","rooms":int}`
-- `GET /captions/{meeting_id}` → HTML viewer (live + history).
+- `GET /health` → `{"status":"ok","transcriber":"mock"|"whisperlive","rooms":int,"speakers":int,"listeners":int}`
+- `GET /captions/{meeting_id}` → HTML viewer (live + history). It and `/dashboard` are sent with
+  `Cache-Control: no-cache`, so a redeploy reaches every open screen on its next load.
 - `GET /api/meetings/{meeting_id}/segments` → JSON list of persisted completed segments,
   each `{"speaker","text","start","end","ts","rms"}` in file order.
 - `POST /api/meetings/{meeting_id}/finalize` → 404 if no segments, else
   `{"meeting_id":str,"markdown":str,"llm":bool,"saved_to":str,"odoo":{"status":"published"|"saved_locally",...}}`.
   `llm:false` means Ollama was unreachable and `markdown` is the plain transcript. Minutes are
   always written to `data/meetings/{meeting_id}.minutes.md`, and the outcome to
-  `data/meetings/{meeting_id}.finalize.json` (`{"finalized_at":float,"llm":bool,"odoo":{...}}`).
+  `data/meetings/{meeting_id}.finalize.json` (`{"finalized_at":float,"llm":bool,"llm_model":str,
+  "llm_error":str|null,"odoo":{...}}`). One run per meeting at a time: a request that arrives while
+  a run is going waits for it and returns the same result with `"joined": true`.
 - Admin endpoints (HTTP Basic, any user, password `ADMIN_PASSWORD`; 403 when unset):
   - `GET /dashboard` → HTML admin page.
-  - `GET /api/settings` → `{"values":{<key>:<value>}, "status":{...}}`. Keys (see
+  - `GET /api/settings` → `{"values":{<key>:<value>}, "version":int, "status":{...}}`. Keys (see
     `server/settings.py` `FIELDS`): `transcriber, whisperlive_url, whisper_model, ollama_url,
     ollama_model, odoo_url, odoo_db, odoo_user, odoo_api_key, odoo_project_id, speaker_aliases,
-    dedup_hold_s, dedup_window_s, dedup_similarity, default_meeting, default_language`.
+    dedup_hold_s, dedup_window_s, dedup_similarity, noise_floor_rms, default_meeting, default_language`.
     Secrets are returned as booleans (set / not set). `status`: `transcriber_reachable,
     llm_reachable, llm_models[], llm_model_pulled, odoo_configured, odoo_reachable, data_dir,
     meetings, live_rooms{id:[speakers]}, agent{name,size,modified}|null`. Reachability is a 2 s
     TCP connect (Ollama: `GET /api/tags`); for `transcriber=mock` it is `true`.
-  - `PUT /api/settings` body `{<key>:<value>,...}` → `{"changed":[keys],"values":{...},"notes":[str]}`;
-    unknown keys ignored, invalid values → 400, a secret sent as `""` is kept and as `null` cleared.
+  - `PUT /api/settings` body `{<key>:<value>,..., "_version"?:int}` → `{"changed":[keys],"values":{...},"version":int,"notes":[str]}`;
+    unknown keys ignored, invalid values → 400 and nothing is applied (all-or-nothing), a secret
+    sent as `""` is kept and as `null` cleared. With `_version` different from the current one →
+    409 (someone saved in between). The dashboard sends only the fields the person changed, so two
+    admins editing different fields merge; it asks only when both changed the same field.
     Persisted to `SETTINGS_FILE` (`data/settings.json`), which overrides the env defaults, and
     used by the hub from the next call on. A changed `whisper_model` (non-mock) is written to
     `WHISPER_MODEL_FILE` and the `WHISPERLIVE_CONTAINER` is restarted via the Docker socket.
@@ -78,7 +88,9 @@ sends nothing.
   `default_meeting` / `default_language`, `user_name` empty (the agent asks for it on first run).
 - `GET /api/meetings` → list, newest first, of
   `{"meeting_id","segments":int,"speakers":[...],"started":ts|null,"ended":ts|null,"live":bool,
-  "minutes":null|{"status":"file_only"}|<finalize.json contents>}`.
+  "finalizing":bool,"minutes":null|{"status":"file_only"}|<finalize.json contents>}`. Files with an
+  invalid meeting name are ignored; torn or corrupt JSONL lines and a corrupt finalize record are
+  skipped, never fatal. Summaries are cached per file and re-read only when a file changes.
 - `GET /api/meetings/{meeting_id}/minutes` → `text/plain` Markdown of the saved minutes, 404 if not finalized.
 
 ### 1.5 Cross-talk suppression (hub-internal, affects 1.1)
@@ -87,6 +99,15 @@ Two completed captions from *different* speakers whose absolute times (`ts`) dif
 `DEDUP_WINDOW_S` (2.0) and whose normalized texts have similarity ≥ `DEDUP_SIMILARITY` (0.78),
 both with ≥ 4 words, are the same utterance heard by two mics: the one with the higher `rms`
 is emitted, the other retracted. Equal `rms` → the first to arrive wins.
+
+**Room noise (before the above):** a caption is dropped as room noise when its `rms` is below
+`noise_floor_rms` (default 0.005; 0 disables), or below 4× that and either at most 2 words or a known
+Whisper silence phrase ("Thank you.", "감사합니다", "Sottotitoli creati dalla comunità Amara.org" …).
+A dropped completed caption is answered with a `retract` so screens clear its partial.
+
+**Broadcast:** every frame goes to all speakers and listeners concurrently; a client that fails or
+does not accept the frame within 2 s is dropped from the room, so one stalled screen never delays
+the others.
 
 ### 1.4 Persistence
 

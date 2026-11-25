@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 
 from audio_capture import LoopbackCapture, MicCapture
-from hub_link import HubLink, finalize, speaker_url
+from hub_link import HubLink, finalize, friendly_state, speaker_url
 from overlay_ui import CaptionOverlay
 from setup_dialog import ask_config, ask_meeting
 from tray import Tray
@@ -62,7 +62,7 @@ class Agent:
                            speaker, self.cfg.get("language", "auto"))
 
     def _on_state(self, state: str) -> None:
-        self.overlay.set_status(state)
+        self.overlay.set_status(friendly_state(state, self.cfg["meeting_id"], self.paused))
         self.tray.set_state("paused" if state == "connected" and self.paused else state)
 
     def start(self) -> None:
@@ -97,17 +97,21 @@ class Agent:
             self.loop_audio.muted = paused
         self.overlay.call(lambda: self.overlay.set_paused(paused))
         if self.running:
+            self._on_state("connected")  # strip and tray switch between "Live" and "Paused"
+        if self.running:
             self.tray.set_state("paused" if paused else "connected")
 
     def finalize(self) -> None:
         """Ask the hub for minutes + Odoo push; runs in a thread, result shown in the status line."""
         def work():
-            self.overlay.set_status("finalizing… (LLM may take a few minutes)")
+            self.overlay.set_status("Writing minutes… this takes one to three minutes")
             r = finalize(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), self.cfg["meeting_id"])
             if "error" in r:
-                self.overlay.set_status(f"finalize failed: {r['error']}")
+                self.overlay.set_status(f"Couldn't write the minutes: {r['error']}")
             else:
-                self.overlay.set_status(f"minutes saved ({'LLM' if r['llm'] else 'transcript'}, odoo: {r['odoo']['status']})")
+                where = "and published to Odoo" if r["odoo"]["status"] == "published" else "and saved on the hub"
+                self.overlay.set_status(f"Minutes written {where}" if r["llm"]
+                                        else "Only the transcript was saved: the minutes writer isn't available")
         threading.Thread(target=work, daemon=True).start()
 
     def change_meeting(self) -> None:

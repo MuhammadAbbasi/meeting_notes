@@ -15,6 +15,7 @@ def make_client(monkeypatch, tmp_path, **env):
     monkeypatch.delenv("MOCK_SCRIPT", raising=False)
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DEDUP_HOLD_S", "0")
+    monkeypatch.setenv("NOISE_FLOOR_RMS", "0")  # most tests send digital silence; the noise test sets its own
     monkeypatch.setenv("ADMIN_PASSWORD", "pw")
     monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
@@ -221,7 +222,7 @@ AUTH = ("admin", "pw")
 
 def test_admin_requires_password(client):
     assert client.get("/", follow_redirects=False).headers["location"] == "/dashboard"
-    assert "Log in" in client.get("/dashboard").text  # page is public, data is not
+    assert "Sign in" in client.get("/dashboard").text  # page is public, data is not
     r = client.get("/api/settings")
     assert r.status_code == 401 and "www-authenticate" not in r.headers  # no browser auth dialog
     assert client.get("/api/settings", auth=("x", "wrong")).status_code == 401
@@ -323,7 +324,8 @@ def test_meeting_history_and_minutes(client, monkeypatch):
 def test_viewer_served(client):
     r = client.get("/captions/daily")
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
-    assert "/listen/daily" in r.text
+    assert 'const MEETING = "daily"' in r.text and "/listen/" in r.text
+    assert r.headers["cache-control"] == "no-cache" == client.get("/dashboard").headers["cache-control"]
     assert client.get("/captions/bad%20id").status_code == 400
     assert client.get("/api/meetings/bad%20id/segments").status_code == 400
 
@@ -381,3 +383,15 @@ def test_finalize_runs_once_when_two_people_press(client, monkeypatch):
     assert a.status_code == b.status_code == 200 and calls == ["daily"]
     assert a.json()["markdown"] == b.json()["markdown"] == CANNED_MD
     assert sum(bool(r.json().get("joined")) for r in (a, b)) == 1
+
+
+def test_room_noise_is_not_captioned(monkeypatch, tmp_path):
+    """An idle microphone must not fill meetings with phantom captions; real speech volume still gets through."""
+    with make_client(monkeypatch, tmp_path, NOISE_FLOOR_RMS="0.005") as c:
+        with c.websocket_connect("/ws/daily/Muhammad") as ws:
+            next_of(ws, "roster")
+            ws.send_bytes(pcm(2.0, amplitude=0.001))       # hum: dropped, and any partial is retracted
+            assert next_of(ws, "retract")["speaker"] == "Muhammad"
+            ws.send_bytes(pcm(2.0, amplitude=0.08))        # speech-level audio
+            assert next_of(ws, "caption", completed=True)["text"] == "Muhammad segment 2"
+        assert [r["text"] for r in c.get("/api/meetings/daily/segments").json()] == ["Muhammad segment 2"]

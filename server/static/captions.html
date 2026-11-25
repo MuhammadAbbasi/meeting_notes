@@ -3,70 +3,190 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Captions · __MEETING_ID__</title>
+<title>__MEETING_ID__ · live captions</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230b57d0' d='M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z'/%3E%3C/svg%3E">
 <style>
-  :root { color-scheme: light dark; --bg:#fff; --fg:#111; --muted:#777; --line:#e5e5e5; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#888; --line:#2a2a2a; } }
-  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui, sans-serif; }
-  header { display:flex; gap:12px; align-items:baseline; padding:12px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
-  header h1 { font-size:16px; margin:0; font-weight:600; }
-  #status { color:var(--muted); font-size:13px; }
-  #roster { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
-  .pill { border-radius:999px; padding:1px 10px; font-size:13px; color:#fff; }
-  main { max-width:900px; margin:0 auto; padding:16px 20px 120px; }
-  .seg { display:grid; grid-template-columns:120px 1fr; gap:12px; padding:6px 0; border-bottom:1px solid var(--line); }
-  .seg .who { font-weight:600; }
-  .seg .t { color:var(--muted); font-size:12px; }
-  .partial { color:var(--muted); font-style:italic; }
+:root {
+  color-scheme: light dark;
+  --font: "Google Sans", "Google Sans Text", Roboto, "Segoe UI", system-ui, sans-serif;
+  --bg: #FFFFFF; --bar: #F0F4F9; --on: #1F1F1F; --on-var: #444746; --outline-var: #C4C7C5;
+  --primary: #0B57D0; --on-primary: #FFFFFF; --primary-c: #D3E3FD; --on-primary-c: #041E49;
+  --ok: #146C2E; --ok-c: #C4EED0; --error: #B3261E; --error-c: #F9DEDC; --warn: #7A5900; --warn-c: #FFDF99;
+  --inverse: #303030; --on-inverse: #F2F2F2; --inverse-primary: #A8C7FA; --size: 18px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #131314; --bar: #1E1F20; --on: #E3E3E3; --on-var: #C4C7C5; --outline-var: #444746;
+    --primary: #A8C7FA; --on-primary: #062E6F; --primary-c: #0842A0; --on-primary-c: #D3E3FD;
+    --ok: #6DD58C; --ok-c: #0F5223; --error: #F2B8B5; --error-c: #8C1D18; --warn: #FFD666; --warn-c: #5B4300;
+    --inverse: #E3E3E3; --on-inverse: #303030; --inverse-primary: #0B57D0; }
+}
+body.big { --size: 28px; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--on); font: 400 14px/20px var(--font); }
+svg.i { width: 24px; height: 24px; fill: currentColor; flex: none; }
+header { position: sticky; top: 0; z-index: 3; background: var(--bar); padding: 8px 8px 8px 20px; display: flex; align-items: center; gap: 12px; min-height: 64px; flex-wrap: wrap; }
+header h1 { font-size: 22px; line-height: 28px; font-weight: 400; margin: 0; overflow-wrap: anywhere; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-weight: 500; white-space: nowrap;
+  border: 1px solid var(--outline-var); color: var(--on-var); }
+.chip.ok { background: var(--ok-c); color: var(--ok); border-color: transparent; }
+.chip.err { background: var(--error-c); color: var(--error); border-color: transparent; }
+.chip .pulse { width: 8px; height: 8px; border-radius: 4px; background: currentColor; animation: pulse 1.6s infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+#roster { display: flex; gap: 4px; flex: 1; justify-content: flex-end; flex-wrap: wrap; }
+.av { width: 32px; height: 32px; border-radius: 16px; display: inline-flex; align-items: center; justify-content: center; font-weight: 500; flex: none; }
+.av.lg { width: 40px; height: 40px; border-radius: 20px; font-size: 16px; }
+.icon-btn { width: 40px; height: 40px; border-radius: 20px; border: 0; background: transparent; color: var(--on-var); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.icon-btn:hover { background: color-mix(in srgb, var(--on) 8%, transparent); }
+.icon-btn[aria-pressed="true"] { background: var(--primary-c); color: var(--on-primary-c); }
+:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.banner { display: grid; grid-template-columns: 40px 1fr auto; gap: 16px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--outline-var); background: var(--bg); position: sticky; top: 64px; z-index: 2; }
+.banner[hidden] { display: none; }
+.banner .ico { width: 40px; height: 40px; border-radius: 20px; display: flex; align-items: center; justify-content: center; background: var(--error-c); color: var(--error); }
+.banner b { display: block; font-weight: 500; font-size: 16px; line-height: 24px; }
+.banner span { color: var(--on-var); }
+.btn { font: 500 14px/20px var(--font); height: 40px; padding: 0 12px; border-radius: 20px; border: 0; background: transparent; color: var(--primary); cursor: pointer; }
+.btn:hover { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+main { max-width: 920px; margin: 0 auto; padding: 16px 20px 160px; }
+.turn { display: grid; grid-template-columns: 40px 1fr; gap: 0 16px; padding: 10px 0; }
+.turn .who { font-weight: 500; font-size: 14px; } .turn .who time { font-weight: 400; color: var(--on-var); margin-left: 8px; font-size: 12px; }
+.turn p { margin: 2px 0 0; font-size: var(--size); line-height: 1.45; overflow-wrap: anywhere; }
+.turn p.partial { color: var(--on-var); font-style: italic; }
+.empty { text-align: center; color: var(--on-var); padding: 80px 16px; }
+.empty b { display: block; color: var(--on); font-size: 16px; font-weight: 500; margin: 12px 0 4px; }
+.empty svg { width: 48px; height: 48px; opacity: .5; }
+#jump { position: fixed; right: 24px; bottom: 24px; height: 56px; padding: 0 20px 0 16px; border-radius: 16px; border: 0; cursor: pointer;
+  background: var(--primary-c); color: var(--on-primary-c); font: 500 14px/20px var(--font); display: none; align-items: center; gap: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.3), 0 4px 8px 3px rgba(0,0,0,.15); z-index: 4; }
+#jump.on { display: inline-flex; }
+#snack { position: fixed; left: 24px; bottom: 24px; z-index: 5; min-width: 288px; max-width: 560px; padding: 14px 16px; border-radius: 4px;
+  background: var(--inverse); color: var(--on-inverse); box-shadow: 0 2px 6px 2px rgba(0,0,0,.15), 0 1px 2px rgba(0,0,0,.3);
+  transform: translateY(140%); opacity: 0; transition: transform .2s, opacity .2s; pointer-events: none; }
+#snack.on { transform: none; opacity: 1; }
+@media (max-width: 600px) { #snack { left: 8px; right: 8px; min-width: 0; } #jump { right: 16px; bottom: 80px; } header h1 { font-size: 18px; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-err" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z"/></symbol>
+  <symbol id="i-text" viewBox="0 0 24 24"><path d="M9 4v3h5v12h3V7h5V4H9zm-6 8h3v7h3v-7h3V9H3v3z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></symbol>
+</svg>
 <header>
-  <h1>Meeting <code>__MEETING_ID__</code></h1>
-  <span id="status">connecting…</span>
-  <div id="roster"></div>
+  <h1 id="title"></h1>
+  <span class="chip" id="status"><span class="pulse"></span><span id="status-text">Connecting</span></span>
+  <div id="roster" aria-label="People speaking"></div>
+  <button class="icon-btn" id="size" title="Larger text" aria-label="Larger text" aria-pressed="false"><svg class="i"><use href="#i-text"/></svg></button>
 </header>
-<main id="log"></main>
+<div class="banner" id="conn" hidden role="alert">
+  <div class="ico"><svg class="i"><use href="#i-err"/></svg></div>
+  <div><b>Connection lost</b><span id="conn-text">Reconnecting…</span></div>
+  <button class="btn" id="retry">Try now</button>
+</div>
+<main id="log" aria-live="polite" aria-relevant="additions">
+  <div class="empty" id="empty"><svg class="i"><use href="#i-mic"/></svg><b>Waiting for someone to speak</b>Captions appear here as people talk in this meeting.</div>
+</main>
+<button id="jump"><svg class="i"><use href="#i-down"/></svg>New captions</button>
+<div id="snack" role="status" aria-live="polite"></div>
 <script>
+"use strict";
 const MEETING = "__MEETING_ID__";
-const log = document.getElementById("log"), status = document.getElementById("status"),
-      roster = document.getElementById("roster");
-const partials = new Map(); // speaker -> element
+const $ = s => document.querySelector(s);
+const log = $("#log");
+const partials = new Map();  // speaker -> <p> showing their in-progress sentence
+let lastTurn = null, roster = null, ws = null, attempt = 0, retryTimer = null;
+$("#title").textContent = MEETING;
 
-function hue(name) { let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
-function color(name) { return `hsl(${hue(name)} 60% 42%)`; }
-function pill(name) { const s = document.createElement("span"); s.className = "pill"; s.textContent = name; s.style.background = color(name); return s; }
-function fmt(ts) { return ts ? new Date(ts * 1000).toLocaleTimeString() : ""; }
+const hue = n => { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+function avatar(name, cls = "av") {
+  const s = document.createElement("span"); s.className = cls; s.title = name;
+  s.style.background = `hsl(${hue(name)} 70% 88%)`; s.style.color = `hsl(${hue(name)} 60% 25%)`;
+  s.textContent = String(name).trim().charAt(0).toUpperCase() || "?"; return s;
+}
+const fmt = ts => typeof ts === "number" ? new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+let snackT = null;
+function snack(text) { const s = $("#snack"); s.textContent = text; s.classList.add("on"); clearTimeout(snackT); snackT = setTimeout(() => s.classList.remove("on"), 4000); }
 
+// ---- scrolling: follow live captions only when the reader is at the bottom ----
+const atBottom = () => window.innerHeight + window.scrollY >= document.body.scrollHeight - 120;
+let follow = true;
+window.addEventListener("scroll", () => { follow = atBottom(); if (follow) $("#jump").classList.remove("on"); }, { passive: true });
+$("#jump").onclick = () => { window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); $("#jump").classList.remove("on"); follow = true; };
+function settle() { if (follow) window.scrollTo(0, document.body.scrollHeight); else $("#jump").classList.add("on"); }
+
+// ---- rendering: consecutive sentences of one person form one turn ----
+function turnFor(speaker, ts) {
+  if (lastTurn && lastTurn.dataset.speaker === speaker) return lastTurn.querySelector(".lines");
+  $("#empty").hidden = true;
+  const t = document.createElement("div"); t.className = "turn"; t.dataset.speaker = speaker;
+  const who = document.createElement("div"); who.className = "who"; who.textContent = speaker;
+  const time = document.createElement("time"); time.textContent = fmt(ts); who.append(time);
+  const lines = document.createElement("div"); lines.className = "lines";
+  const right = document.createElement("div"); right.append(who, lines);
+  t.append(avatar(speaker, "av lg"), right); log.append(t); lastTurn = t;
+  return lines;
+}
 function render(c) {
-  let el = partials.get(c.speaker);
-  if (!el) {
-    el = document.createElement("div"); el.className = "seg";
-    el.innerHTML = `<div><div class="who"></div><div class="t"></div></div><div class="txt"></div>`;
-    el.querySelector(".who").textContent = c.speaker; el.querySelector(".who").style.color = color(c.speaker);
-    log.appendChild(el);
+  let p = partials.get(c.speaker);
+  if (p && p.closest(".turn") !== lastTurn) { p.remove(); p = null; partials.delete(c.speaker); }  // someone spoke in between
+  if (!p) { p = document.createElement("p"); turnFor(c.speaker, c.ts).append(p); }
+  p.textContent = c.text;
+  p.className = c.completed ? "" : "partial";
+  if (c.completed) partials.delete(c.speaker); else partials.set(c.speaker, p);
+}
+function retract(speaker) {
+  const p = partials.get(speaker); if (!p) return;
+  const turn = p.closest(".turn"); p.remove(); partials.delete(speaker);
+  if (turn && !turn.querySelector("p")) { if (turn === lastTurn) lastTurn = turn.previousElementSibling?.classList.contains("turn") ? turn.previousElementSibling : null; turn.remove(); }
+}
+function setRoster(speakers) {
+  if (roster) {
+    for (const s of speakers) if (!roster.includes(s)) snack(`${s} joined`);
+    for (const s of roster) if (!speakers.includes(s)) snack(`${s} left`);
   }
-  el.querySelector(".t").textContent = fmt(c.ts);
-  const txt = el.querySelector(".txt"); txt.textContent = c.text; txt.className = "txt" + (c.completed ? "" : " partial");
-  if (c.completed) partials.delete(c.speaker); else partials.set(c.speaker, el);
-  window.scrollTo(0, document.body.scrollHeight);
+  roster = speakers;
+  $("#roster").replaceChildren(...speakers.map(s => avatar(s)));
+}
+function setStatus(live, text) {
+  $("#status").className = "chip " + (live ? "ok" : "err"); $("#status-text").textContent = text;
+  $("#conn").hidden = live;
 }
 
-fetch("/api/meetings/__MEETING_ID__/segments").then(r => r.json())
-  .then(rows => rows.forEach(r => render({ ...r, completed: true }))).catch(() => {});
-
+// ---- history first, then live; on every reconnect the history is reloaded so nothing is missed ----
+async function loadHistory() {
+  const rows = await (await fetch(`/api/meetings/${encodeURIComponent(MEETING)}/segments`)).json();
+  log.querySelectorAll(".turn").forEach(t => t.remove()); partials.clear(); lastTurn = null;
+  $("#empty").hidden = rows.length > 0;
+  rows.forEach(r => render({ ...r, completed: true }));
+  follow = true; settle();
+}
 function connect() {
+  clearTimeout(retryTimer);
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(proto + "://" + location.host + "/listen/__MEETING_ID__");
-  ws.onopen = () => status.textContent = "live";
-  ws.onclose = () => { status.textContent = "reconnecting…"; setTimeout(connect, 2000); };
+  ws = new WebSocket(`${proto}://${location.host}/listen/${encodeURIComponent(MEETING)}`);
+  ws.onopen = async () => { attempt = 0; setStatus(true, "Live"); try { await loadHistory(); } catch (e) {} };
+  ws.onclose = () => {
+    // exponential backoff with jitter, so a room full of screens doesn't reconnect in the same instant
+    const delay = Math.min(15000, 1000 * 2 ** attempt++) * (0.5 + Math.random() / 2);
+    setStatus(false, "Reconnecting");
+    $("#conn-text").textContent = `Trying again in ${Math.ceil(delay / 1000)} s. Captions said in the meantime are loaded when it's back.`;
+    retryTimer = setTimeout(connect, delay);
+  };
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
-    if (m.type === "roster") { roster.replaceChildren(...m.speakers.map(pill)); }
-    else if (m.type === "caption") render(m);
-    else if (m.type === "retract") { const el = partials.get(m.speaker); if (el) { el.remove(); partials.delete(m.speaker); } }
+    if (m.type === "roster") setRoster(m.speakers);
+    else if (m.type === "caption") { render(m); settle(); }
+    else if (m.type === "retract") retract(m.speaker);
+    else if (m.type === "finalized") snack(m.llm ? "The minutes of this meeting were written" : "The transcript of this meeting was saved");
   };
 }
+$("#retry").onclick = () => { attempt = 0; if (ws) ws.onclose = null, ws.close(); connect(); };
+$("#size").onclick = () => {
+  const big = document.body.classList.toggle("big"); localStorage.setItem("captions-big", big ? "1" : "");
+  $("#size").setAttribute("aria-pressed", big); $("#size").title = big ? "Normal text" : "Larger text";
+};
+if (localStorage.getItem("captions-big")) { document.body.classList.add("big"); $("#size").setAttribute("aria-pressed", "true"); }
 connect();
 </script>
 </body>

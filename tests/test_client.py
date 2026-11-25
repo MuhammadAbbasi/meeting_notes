@@ -121,3 +121,12 @@ def test_hublink_stops_when_name_taken_by_another_pc():
     assert not t.is_alive(), "HubLink kept reconnecting after being replaced"
     assert msgs and msgs[0]["code"] == "replaced"
     assert states[-1].startswith("stopped: your name is in use")
+
+
+def test_strip_status_is_plain_language():
+    from client.hub_link import friendly_state
+    assert friendly_state("connected", "daily") == "Live · daily"
+    assert friendly_state("connected", "daily", paused=True) == "Paused · daily"
+    assert friendly_state("reconnecting (ConnectionRefusedError)", "daily") == "Reconnecting to the hub…"
+    assert friendly_state("stopped", "daily").startswith("Stopped")
+    assert friendly_state("stopped: your name is in use on another PC (change it in config.json)", "d").startswith("Stopped: your name")

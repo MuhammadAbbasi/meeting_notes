@@ -5,8 +5,9 @@ import queue
 import tkinter as tk
 from typing import Callable
 
-PALETTE = ["#4fc3f7", "#aed581", "#ffb74d", "#ba68c8", "#f06292", "#4db6ac", "#fff176", "#90a4ae"]
-BG, FG, MUTED = "#1e1e1e", "#f2f2f2", "#8a8a8a"
+# Material 3 dark (Google) tones, matching the dashboard and the live captions page
+PALETTE = ["#A8C7FA", "#6DD58C", "#FFD666", "#F2B8B5", "#D7AEFB", "#7FCFFF", "#FFB683", "#C4C7C5"]
+BG, FG, MUTED, ACCENT, ERROR_BG = "#1E1F20", "#E3E3E3", "#C4C7C5", "#A8C7FA", "#8C1D18"
 FONT = ("Segoe UI", 11)
 
 
@@ -30,13 +31,13 @@ class CaptionOverlay:
 
         bar = tk.Frame(root, bg=BG)
         bar.pack(fill="x", padx=6, pady=(4, 0))
-        self.status = tk.Label(bar, text="connecting…", bg=BG, fg=MUTED, font=("Segoe UI", 8))
+        self.status = tk.Label(bar, text="Connecting to the hub…", bg=BG, fg=MUTED, font=("Segoe UI", 9))
         self.status.pack(side="left")
         tk.Button(bar, text="Hide", command=self.hide, **self._btn()).pack(side="right")
         self.pause_btn = tk.Button(bar, text="Pause", command=self._toggle_pause, **self._btn())
         self.pause_btn.pack(side="right", padx=4)
         if on_finalize:
-            tk.Button(bar, text="Finalize", command=on_finalize, **self._btn()).pack(side="right", padx=4)
+            tk.Button(bar, text="Write minutes", command=on_finalize, **self._btn()).pack(side="right", padx=4)
         for widget in (bar, self.status):
             widget.bind("<ButtonPress-1>", self._drag_start)
             widget.bind("<B1-Motion>", self._drag_move)
@@ -52,8 +53,9 @@ class CaptionOverlay:
 
     @staticmethod
     def _btn() -> dict:
-        return dict(bg="#333", fg=FG, activebackground="#444", activeforeground=FG, bd=0,
-                    padx=6, pady=1, font=("Segoe UI", 8))
+        # text buttons, Material style: accent label on the surface, a light tint when pressed
+        return dict(bg=BG, fg=ACCENT, activebackground="#2D3440", activeforeground=ACCENT, bd=0, relief="flat",
+                    cursor="hand2", padx=8, pady=2, font=("Segoe UI", 9, "bold"))
 
     # --- public, thread-safe -------------------------------------------------
     def push(self, frame: dict) -> None:
@@ -83,7 +85,8 @@ class CaptionOverlay:
 
     def set_paused(self, paused: bool) -> None:
         self._paused = paused
-        self.pause_btn.configure(text="Resume" if paused else "Pause", bg="#a33" if paused else "#333")
+        self.pause_btn.configure(text="Resume" if paused else "Pause", bg=ERROR_BG if paused else BG,
+                                 fg="#F9DEDC" if paused else ACCENT)
 
     def _toggle_pause(self) -> None:
         self.on_pause(not self._paused)
@@ -117,7 +120,7 @@ class CaptionOverlay:
             elif f["type"] == "error":
                 self.status.configure(text=f["message"])
             elif f["type"] == "finalized":
-                self.status.configure(text=f"minutes ready ({'LLM' if f['llm'] else 'transcript'}, {f['odoo_status']})")
+                self.status.configure(text="Minutes written" if f["llm"] else "Only the transcript was saved: the minutes writer isn't available")
             elif f["type"] == "caption":
                 if f["completed"]:
                     self._partials.pop(f["speaker"], None)

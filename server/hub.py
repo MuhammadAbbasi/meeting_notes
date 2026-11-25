@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Red
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-from server.deduplicator import CrossTalkFilter
+from server.deduplicator import CrossTalkFilter, is_room_noise
 from server.docker_api import restart_container
 from server.meeting import MEETING_ID_RE, SPEAKER_RE, MeetingRoom, StreamClock, caption_frame
 from server.odoo_client import OdooMeetingClient
@@ -118,14 +118,17 @@ async def health() -> dict:
             "listeners": sum(len(r.listeners) for r in rooms.values())}
 
 
+NO_CACHE = {"Cache-Control": "no-cache"}  # browsers revalidate, so a redeploy reaches every open screen
+
+
 @app.get("/captions/{meeting_id}", response_class=HTMLResponse)
-async def viewer(meeting_id: str) -> str:
-    return VIEWER_HTML.replace("__MEETING_ID__", _valid_id(meeting_id))
+async def viewer(meeting_id: str) -> HTMLResponse:
+    return HTMLResponse(VIEWER_HTML.replace("__MEETING_ID__", _valid_id(meeting_id)), headers=NO_CACHE)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard() -> str:
-    return DASHBOARD_HTML
+async def dashboard() -> HTMLResponse:
+    return HTMLResponse(DASHBOARD_HTML, headers=NO_CACHE)
 
 
 async def _reachable(url: str, timeout: float = 2.0) -> bool:
@@ -177,7 +180,7 @@ async def settings() -> dict:
             "odoo_configured": odoo.is_configured,
             "odoo_reachable": odoo_ok,
             "data_dir": str(DATA_DIR.resolve()),
-            "meetings": len(list(DATA_DIR.glob("*.jsonl"))),
+            "meetings": sum(1 for p in DATA_DIR.glob("*.jsonl") if MEETING_ID_RE.fullmatch(p.stem)),
             "live_rooms": {mid: sorted(r.speakers) for mid, r in rooms.items()},
             "agent": _agent_info(),
         },
@@ -424,6 +427,10 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
     async def on_segments(segs) -> None:
         for seg in segs:
             frame = caption_frame(meeting_id, speaker, seg, clock)
+            if is_room_noise(frame["text"], frame["rms"], S.get("noise_floor_rms")):
+                if seg.completed:  # clear a partial that screens may already show for this phantom sentence
+                    await room.broadcast({"type": "retract", "meeting_id": meeting_id, "speaker": speaker})
+                continue
             if seg.completed:
                 room.dedup.add(frame)
                 task = asyncio.create_task(_settle(room, frame))

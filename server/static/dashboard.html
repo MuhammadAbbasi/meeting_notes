@@ -3,378 +3,659 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meeting captions · office hub</title>
+<title>Meeting captions</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230b57d0' d='M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z'/%3E%3C/svg%3E">
 <style>
+/* Material 3, Google flavour. Fonts are the user's own (no requests leave the LAN). */
+:root {
+  color-scheme: light dark;
+  --font: "Google Sans", "Google Sans Text", Roboto, "Segoe UI", system-ui, sans-serif;
+  --bg: #F0F4F9; --panel: #FFFFFF; --surface-2: #F8FAFD; --container: #E9EEF6; --container-high: #DDE3EA;
+  --on: #1F1F1F; --on-var: #444746; --outline: #747775; --outline-var: #C4C7C5;
+  --primary: #0B57D0; --on-primary: #FFFFFF; --primary-c: #D3E3FD; --on-primary-c: #041E49;
+  --sec-c: #C2E7FF; --on-sec-c: #001D35;
+  --error: #B3261E; --error-c: #F9DEDC; --on-error-c: #410E0B;
+  --ok: #146C2E; --ok-c: #C4EED0; --warn: #7A5900; --warn-c: #FFDF99;
+  --inverse: #303030; --on-inverse: #F2F2F2; --inverse-primary: #A8C7FA;
+  --scrim: rgba(0,0,0,.32);
+}
+@media (prefers-color-scheme: dark) {
   :root {
-    color-scheme: light dark;
-    --bg:#F2F4F6; --surface:#FFFFFF; --ink:#17212B; --muted:#5C6773; --line:#D9DEE3;
-    --action:#1D5EC0; --action-ink:#FFFFFF; --ok:#1E8A58; --warn:#B9780F; --bad:#C23B33;
-    --ok-bg:#E6F4EC; --warn-bg:#FBF1DC; --bad-bg:#FBE7E5; --soft:#E9EDF1;
+    --bg: #1B1B1B; --panel: #131314; --surface-2: #1E1F20; --container: #282A2C; --container-high: #333537;
+    --on: #E3E3E3; --on-var: #C4C7C5; --outline: #8E918F; --outline-var: #444746;
+    --primary: #A8C7FA; --on-primary: #062E6F; --primary-c: #0842A0; --on-primary-c: #D3E3FD;
+    --sec-c: #004A77; --on-sec-c: #C2E7FF;
+    --error: #F2B8B5; --error-c: #8C1D18; --on-error-c: #F9DEDC;
+    --ok: #6DD58C; --ok-c: #0F5223; --warn: #FFD666; --warn-c: #5B4300;
+    --inverse: #E3E3E3; --on-inverse: #303030; --inverse-primary: #0B57D0;
   }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#161A1F; --surface:#1F252C; --ink:#EDF0F3; --muted:#9AA5B1; --line:#343C46;
-            --action:#4D8BE8; --ok:#4FBF86; --warn:#E0A33A; --bad:#E8675E;
-            --ok-bg:#1E3328; --warn-bg:#3A2F17; --bad-bg:#3D2321; --soft:#2A313A; }
-  }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 "Segoe UI", system-ui, sans-serif; }
-  h1, h2, h3, .status-line { font-family:"Bahnschrift", "Segoe UI", system-ui, sans-serif; font-weight:600; letter-spacing:-0.01em; }
-  a { color:var(--action); }
-  code { font:13px ui-monospace, Consolas, monospace; background:var(--soft); padding:1px 5px; border-radius:4px; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--on); font: 400 14px/20px var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--primary); }
+svg.i { width: 24px; height: 24px; fill: currentColor; flex: none; }
+svg.i.s { width: 18px; height: 18px; }
+code { font: 13px/18px ui-monospace, "Roboto Mono", Consolas, monospace; background: var(--container); padding: 1px 6px; border-radius: 4px; }
+.headline { font-size: 28px; line-height: 36px; font-weight: 400; margin: 0; }
+.title-m { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: .1px; margin: 0; }
+.muted { color: var(--on-var); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-  header { background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
-  header .inner { max-width:920px; margin:0 auto; padding:0 24px; display:flex; align-items:center; gap:28px; height:56px; }
-  header h1 { font-size:17px; margin:0; white-space:nowrap; }
-  nav { display:flex; gap:4px; }
-  nav a { color:var(--muted); text-decoration:none; padding:17px 12px 15px; border-bottom:2px solid transparent; font-weight:500; }
-  nav a.on { color:var(--ink); border-color:var(--action); }
-  header .right { margin-left:auto; display:flex; gap:14px; align-items:center; font-size:13px; color:var(--muted); }
-  header .right button { font-size:13px; }
+/* ---- app shell: top bar, navigation drawer, main panel ---- */
+.topbar { height: 64px; display: flex; align-items: center; gap: 8px; padding: 0 16px 0 8px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 12px; font-size: 22px; color: var(--on); }
+.brand svg { color: var(--primary); width: 28px; height: 28px; }
+.topbar .grow { flex: 1; }
+.topbar .live { font-size: 14px; color: var(--on-var); margin-right: 8px; }
+.shell { display: flex; height: calc(100% - 64px); }
+.drawer { width: 256px; flex: none; padding: 4px 12px; }
+.drawer a { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px; border-radius: 28px; color: var(--on-var);
+  text-decoration: none; font-weight: 500; margin-bottom: 2px; position: relative; }
+.drawer a:hover { background: color-mix(in srgb, var(--on) 8%, transparent); }
+.drawer a.on { background: var(--sec-c); color: var(--on-sec-c); }
+.drawer a .badge { margin-left: auto; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--error); color: var(--panel);
+  font-size: 11px; line-height: 16px; text-align: center; font-weight: 500; }
+.panel { flex: 1; min-width: 0; background: var(--panel); border-radius: 16px 16px 0 0; margin-right: 16px; overflow: auto; position: relative; }
+.progress { position: sticky; top: 0; height: 4px; overflow: hidden; visibility: hidden; z-index: 3; background: var(--primary-c); }
+.progress.on { visibility: visible; }
+.progress::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 40%; background: var(--primary); animation: indet 1.6s infinite cubic-bezier(.4,0,.2,1); }
+@keyframes indet { from { left: -40%; } to { left: 100%; } }
+.view { display: none; max-width: 960px; margin: 0 auto; padding: 24px 32px 120px; }
+.view.on { display: block; }
+.view > header { display: flex; align-items: center; gap: 12px; margin: 8px 0 24px; flex-wrap: wrap; }
+.view > header .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
-  main { max-width:920px; margin:0 auto; padding:28px 24px 96px; }
-  .view { display:none; } .view.on { display:block; }
-  h2 { font-size:22px; margin:0 0 6px; }
-  h3 { font-size:17px; margin:0 0 4px; }
-  p.lead { color:var(--muted); margin:0 0 20px; max-width:62ch; }
-  section + section { margin-top:40px; }
+/* ---- buttons ---- */
+.btn { font: 500 14px/20px var(--font); letter-spacing: .1px; height: 40px; padding: 0 24px; border-radius: 20px; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px; text-decoration: none; white-space: nowrap; position: relative; }
+.btn.has-i { padding-left: 16px; }
+.btn.filled { background: var(--primary); color: var(--on-primary); }
+.btn.filled:hover { box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 1px 3px 1px rgba(0,0,0,.15); }
+.btn.tonal { background: var(--sec-c); color: var(--on-sec-c); }
+.btn.outlined { background: transparent; color: var(--primary); border: 1px solid var(--outline); }
+.btn.text { background: transparent; color: var(--primary); padding: 0 12px; }
+.btn:hover::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: currentColor; opacity: .08; }
+.btn:disabled { opacity: .38; cursor: default; box-shadow: none; }
+.btn:disabled::before { display: none; }
+.icon-btn { width: 40px; height: 40px; border-radius: 20px; border: 0; background: transparent; color: var(--on-var); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; }
+.icon-btn:hover { background: color-mix(in srgb, var(--on) 8%, transparent); }
+.icon-btn[hidden] { display: none; }
+:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
 
-  /* overview */
-  .status-line { font-size:34px; line-height:1.15; margin:8px 0 22px; max-width:22ch; }
-  .status-line.bad { color:var(--bad); } .status-line.warn { color:var(--warn); }
-  .services { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:28px; }
-  .service { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
-  .service .name { font-weight:600; display:flex; align-items:center; gap:8px; }
-  .service .detail { color:var(--muted); font-size:13px; margin-top:3px; }
-  .dot { width:10px; height:10px; border-radius:50%; background:var(--muted); flex:none; display:inline-block; }
-  .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.bad { background:var(--bad); }
-  .issues { list-style:none; margin:0; padding:0; }
-  .issues li { background:var(--surface); border-left:4px solid var(--warn); border-radius:0 8px 8px 0; padding:12px 16px; margin-bottom:10px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
-  .issues li.bad { border-color:var(--bad); }
-  .issues li .text { flex:1 1 320px; }
-  .issues li .text b { display:block; }
-  .issues li .text span { color:var(--muted); font-size:14px; }
+/* ---- cards, lists, chips ---- */
+.card { border: 1px solid var(--outline-var); border-radius: 12px; padding: 16px 24px 20px; background: var(--panel); }
+.card + .card { margin-top: 16px; }
+.card > .head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; min-height: 40px; }
+.card > .head .grow { flex: 1; }
+.card > p { margin: 0 0 16px; color: var(--on-var); max-width: 72ch; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--outline-var);
+  font-weight: 500; color: var(--on-var); white-space: nowrap; }
+.chip.ok { background: var(--ok-c); border-color: transparent; color: var(--ok); }
+.chip.warn { background: var(--warn-c); border-color: transparent; color: var(--warn); }
+.chip.err { background: var(--error-c); border-color: transparent; color: var(--error); }
+.chip.info { background: var(--primary-c); border-color: transparent; color: var(--on-primary-c); }
+.chip svg { width: 18px; height: 18px; }
+.list { list-style: none; margin: 0; padding: 0; }
+.list > li { display: flex; align-items: center; gap: 16px; padding: 12px 16px; min-height: 72px; border-radius: 12px; }
+.list > li.click { cursor: pointer; }
+.list > li.click:hover { background: var(--surface-2); }
+.list > li + li { border-top: 1px solid var(--outline-var); }
+.list .body { flex: 1; min-width: 0; }
+.list .head-l { font-size: 16px; line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .sup { color: var(--on-var); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatar { width: 40px; height: 40px; border-radius: 20px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 500; font-size: 16px; background: var(--primary-c); color: var(--on-primary-c); }
+.avatar svg { width: 22px; height: 22px; }
 
-  /* buttons & forms */
-  button { font:inherit; font-size:14px; padding:7px 14px; border-radius:6px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; }
-  button.primary { background:var(--action); border-color:var(--action); color:var(--action-ink); font-weight:600; }
-  button.quiet { background:transparent; border-color:transparent; color:var(--action); padding-left:6px; padding-right:6px; }
-  button:disabled { opacity:.55; cursor:default; }
-  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline:2px solid var(--action); outline-offset:2px; }
-  .field { display:grid; grid-template-columns:200px 1fr; gap:4px 16px; align-items:center; margin:10px 0; }
-  .field > span { color:var(--muted); font-size:14px; }
-  .field .help { grid-column:2; color:var(--muted); font-size:13px; margin-top:-2px; }
-  input, select, textarea { font:inherit; font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:7px 10px; width:100%; max-width:520px; }
-  textarea { font-family:ui-monospace, Consolas, monospace; min-height:64px; }
-  .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
-  .msg { font-size:14px; color:var(--muted); }
-  .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); }
-  .block { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:20px 22px; }
-  .block + .block { margin-top:16px; }
-  .block h3 { display:flex; align-items:center; gap:10px; }
-  .block h3 .state { margin-left:auto; font-family:"Segoe UI", system-ui, sans-serif; font-weight:500; font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px; }
-  .block p { color:var(--muted); margin:0 0 10px; max-width:70ch; font-size:14px; }
-  #savebar { position:sticky; bottom:0; background:var(--bg); border-top:1px solid var(--line); padding:12px 0; margin-top:20px; display:flex; gap:10px; align-items:center; }
-  @media (max-width:640px) { .field { grid-template-columns:1fr; } .field .help { grid-column:1; } header .inner { gap:14px; } nav a { padding:17px 8px 15px; } }
+/* ---- banners (things that need attention) ---- */
+.banner { display: grid; grid-template-columns: 40px 1fr; gap: 4px 16px; padding: 16px 16px 8px; border-radius: 12px; background: var(--surface-2);
+  border: 1px solid var(--outline-var); margin-bottom: 12px; }
+.banner .ico { width: 40px; height: 40px; border-radius: 20px; display: flex; align-items: center; justify-content: center; background: var(--warn-c); color: var(--warn); }
+.banner.err .ico { background: var(--error-c); color: var(--error); }
+.banner.info .ico { background: var(--primary-c); color: var(--on-primary-c); }
+.banner.ok .ico { background: var(--ok-c); color: var(--ok); }
+.banner .txt { padding-bottom: 8px; }
+.banner .txt b { display: block; font-weight: 500; font-size: 16px; line-height: 24px; }
+.banner .txt span { color: var(--on-var); overflow-wrap: anywhere; }
+.banner .acts { grid-column: 2; display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-right: -8px; }
+.banner .acts:empty { display: none; }
+.banner.top { border-radius: 0; border-width: 0 0 1px; margin: 0; background: var(--panel); position: sticky; top: 4px; z-index: 2; }
+.banner[hidden] { display: none; }
 
-  /* meetings */
-  .mlist { list-style:none; margin:0; padding:0; }
-  .mlist li { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:14px 18px; margin-bottom:10px; display:grid; grid-template-columns:1fr auto; gap:4px 16px; align-items:center; cursor:pointer; }
-  .mlist li:hover { border-color:var(--action); }
-  .mlist .title { font-weight:600; font-size:16px; grid-column:1; grid-row:1; }
-  .mlist .meta { color:var(--muted); font-size:14px; grid-column:1; grid-row:2; }
-  .mlist .state { grid-column:2; grid-row:1 / span 2; text-align:right; font-size:14px; }
-  .chip { display:inline-block; border-radius:999px; padding:2px 10px; font-size:13px; background:var(--soft); white-space:nowrap; }
-  .chip.ok { background:var(--ok-bg); color:var(--ok); } .chip.warn { background:var(--warn-bg); color:var(--warn); } .chip.bad { background:var(--bad-bg); color:var(--bad); }
-  .chip.live { background:var(--ok); color:#fff; }
-  .detail-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
-  .detail-bar h2 { margin:0; margin-right:auto; }
-  .tabs { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
-  .tabs button { border:0; border-radius:0; } .tabs button.on { background:var(--ink); color:var(--bg); }
-  .note { border-left:4px solid var(--action); background:var(--surface); padding:10px 14px; margin:0 0 16px; border-radius:0 8px 8px 0; font-size:14px; }
-  .note.warn { border-color:var(--warn); } .note.bad { border-color:var(--bad); }
-  .md { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:8px 24px 20px; max-width:78ch; }
-  .md h2, .md h3 { font-family:"Segoe UI", system-ui, sans-serif; font-size:16px; margin:18px 0 6px; }
-  .md table { border-collapse:collapse; margin:6px 0; } .md td, .md th { border:1px solid var(--line); padding:4px 10px; text-align:left; font-size:14px; }
-  .md p { margin:4px 0; }
-  .seg { display:grid; grid-template-columns:130px 1fr; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); max-width:78ch; }
-  .seg .who { font-weight:600; } .seg .t { color:var(--muted); font-size:12px; }
-  .empty { color:var(--muted); padding:24px 0; }
+/* ---- status hero ---- */
+.hero { display: flex; gap: 20px; align-items: center; padding: 24px; border-radius: 28px; background: var(--surface-2); margin-bottom: 24px; }
+.hero .big { width: 64px; height: 64px; border-radius: 32px; display: flex; align-items: center; justify-content: center; flex: none; background: var(--primary-c); color: var(--on-primary-c); }
+.hero .big svg { width: 36px; height: 36px; }
+.hero.ok .big { background: var(--ok-c); color: var(--ok); }
+.hero.warn .big { background: var(--warn-c); color: var(--warn); }
+.hero.err .big { background: var(--error-c); color: var(--error); }
+.hero p { margin: 4px 0 0; color: var(--on-var); }
+.svc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.svc { border: 1px solid var(--outline-var); border-radius: 12px; padding: 16px; display: flex; gap: 12px; align-items: flex-start; }
+.svc .dot { width: 10px; height: 10px; border-radius: 5px; margin-top: 7px; flex: none; background: var(--outline); }
+.svc .dot.ok { background: var(--ok); } .svc .dot.warn { background: #E37400; } .svc .dot.err { background: var(--error); }
+.svc b { font-weight: 500; display: block; }
+.svc span { color: var(--on-var); overflow-wrap: anywhere; }
+h2.section { font-size: 16px; line-height: 24px; font-weight: 500; margin: 32px 0 12px; }
 
-  /* install */
-  .steps { counter-reset:step; list-style:none; margin:0; padding:0; }
-  .steps li { counter-increment:step; display:grid; grid-template-columns:36px 1fr; gap:14px; padding:14px 0; border-bottom:1px solid var(--line); }
-  .steps li > * { grid-column:2; }
-  .steps li::before { content:counter(step); grid-column:1; grid-row:1 / span 2; font-family:"Bahnschrift", "Segoe UI", sans-serif; font-size:22px; color:var(--action); line-height:1.2; }
-  .steps li b { display:block; margin-bottom:2px; }
-  .steps li span { color:var(--muted); font-size:14px; }
-  .downloads { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 4px; }
-  .downloads a { display:inline-block; padding:9px 16px; border-radius:6px; background:var(--action); color:#fff; text-decoration:none; font-weight:600; }
-  .downloads a.second { background:var(--surface); color:var(--ink); border:1px solid var(--line); }
-  details summary { cursor:pointer; color:var(--action); font-size:14px; }
+/* ---- text fields (outlined, floating label) ---- */
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 24px 16px; margin: 8px 0 4px; }
+.fields .full { grid-column: 1 / -1; }
+.tf { position: relative; }
+.tf input, .tf select, .tf textarea { width: 100%; font: 400 16px/24px var(--font); color: var(--on); background: transparent;
+  border: 1px solid var(--outline); border-radius: 4px; padding: 15px; outline: none; appearance: none; }
+.tf textarea { min-height: 88px; resize: vertical; }
+.tf select { padding-right: 40px; background-image: linear-gradient(45deg, transparent 50%, var(--on-var) 50%), linear-gradient(135deg, var(--on-var) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 26px, calc(100% - 15px) 26px; background-size: 5px 5px; background-repeat: no-repeat; }
+.tf select option { background: var(--panel); color: var(--on); }
+.tf label { position: absolute; left: 12px; top: 16px; padding: 0 4px; color: var(--on-var); background: var(--panel); font-size: 16px; line-height: 24px;
+  pointer-events: none; transition: top .15s, font-size .15s, line-height .15s; max-width: calc(100% - 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf input:focus, .tf select:focus, .tf textarea:focus { border: 2px solid var(--primary); padding: 14px; }
+.tf input:focus + label, .tf textarea:focus + label, .tf select:focus + label { color: var(--primary); }
+.tf input:focus + label, .tf input:not(:placeholder-shown) + label, .tf textarea:focus + label, .tf textarea:not(:placeholder-shown) + label,
+.tf select + label { top: -8px; font-size: 12px; line-height: 16px; }
+.tf .help { font-size: 12px; line-height: 16px; color: var(--on-var); padding: 4px 16px 0; }
+.tf.error input { border-color: var(--error); } .tf.error label, .tf.error .help { color: var(--error); }
+.result { display: flex; align-items: center; gap: 8px; color: var(--on-var); min-height: 24px; margin-top: 8px; overflow-wrap: anywhere; }
+.result.ok { color: var(--ok); } .result.err { color: var(--error); }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.savebar { position: sticky; bottom: 16px; margin-top: 24px; display: none; align-items: center; gap: 8px; padding: 8px 8px 8px 24px; border-radius: 16px;
+  background: var(--container); box-shadow: 0 2px 6px 2px rgba(0,0,0,.15), 0 1px 2px rgba(0,0,0,.3); z-index: 2; }
+.savebar.on { display: flex; }
+.savebar .grow { flex: 1; }
 
-  /* login */
-  #login { position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center; z-index:9; padding:20px; }
-  #login form { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:28px 30px; width:360px; }
-  #login h2 { margin:0 0 4px; } #login p { margin:0 0 16px; }
-  #login input { max-width:none; margin:4px 0 12px; }
-  @media (prefers-reduced-motion: no-preference) { .view.on { animation:in .18s ease-out; } @keyframes in { from { opacity:0; transform:translateY(4px); } } }
+/* ---- meetings ---- */
+.search { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 8px 0 16px; border-radius: 24px; background: var(--bg); margin-bottom: 16px; max-width: 560px; color: var(--on-var); }
+.search input { flex: 1; border: 0; background: transparent; font: 400 16px/24px var(--font); color: var(--on); outline: none; }
+.seg { display: inline-flex; border: 1px solid var(--outline); border-radius: 20px; overflow: hidden; height: 40px; }
+.seg button { font: 500 14px/20px var(--font); border: 0; background: transparent; color: var(--on); padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--outline); }
+.seg button.on { background: var(--sec-c); color: var(--on-sec-c); }
+.seg button:not(.on) svg { display: none; }
+.meta-chips { display: flex; gap: 8px; flex-wrap: wrap; margin: -12px 0 20px; }
+.doc { border: 1px solid var(--outline-var); border-radius: 12px; padding: 8px 32px 24px; max-width: 80ch; overflow-wrap: anywhere; }
+.doc h2, .doc h3, .doc h4 { font-size: 18px; line-height: 24px; font-weight: 500; margin: 24px 0 8px; }
+.doc p { margin: 6px 0; } .doc ul, .doc ol { padding-left: 22px; }
+.doc .tbl { overflow-x: auto; }
+.doc table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+.doc th { text-align: left; font-weight: 500; background: var(--surface-2); }
+.doc td, .doc th { border-bottom: 1px solid var(--outline-var); padding: 8px 12px; vertical-align: top; overflow-wrap: normal; word-break: normal; }
+.doc th { white-space: nowrap; }
+.turn { display: grid; grid-template-columns: 40px 1fr; gap: 0 16px; padding: 12px 0; max-width: 80ch; overflow-wrap: anywhere; }
+.turn .who { font-weight: 500; } .turn .who time { font-weight: 400; color: var(--on-var); margin-left: 8px; font-size: 12px; }
+.turn p { margin: 2px 0 0; }
+.empty { text-align: center; padding: 48px 16px; color: var(--on-var); list-style: none; }
+.empty svg { width: 48px; height: 48px; color: var(--outline); }
+.empty b { display: block; color: var(--on); font-size: 16px; font-weight: 500; margin: 8px 0 4px; }
+
+/* ---- install ---- */
+.steps { list-style: none; counter-reset: s; margin: 16px 0 0; padding: 0; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 40px 1fr; gap: 2px 16px; padding: 12px 0; }
+.steps li::before { content: counter(s); grid-row: span 2; width: 32px; height: 32px; border-radius: 16px; background: var(--primary-c); color: var(--on-primary-c);
+  display: flex; align-items: center; justify-content: center; font-weight: 500; }
+.steps b { font-weight: 500; font-size: 16px; line-height: 24px; }
+.steps span { color: var(--on-var); grid-column: 2; }
+details > summary { cursor: pointer; color: var(--primary); font-weight: 500; display: inline-flex; align-items: center; gap: 4px; height: 40px; }
+
+/* ---- snackbar, dialog, sign-in ---- */
+#snack { position: fixed; left: 24px; bottom: 24px; z-index: 20; min-width: 288px; max-width: 560px; display: flex; align-items: center; gap: 8px;
+  padding: 4px 4px 4px 16px; min-height: 48px; border-radius: 4px; background: var(--inverse); color: var(--on-inverse);
+  box-shadow: 0 2px 6px 2px rgba(0,0,0,.15), 0 1px 2px rgba(0,0,0,.3); transform: translateY(140%); opacity: 0; transition: transform .2s, opacity .2s; pointer-events: none; }
+#snack.on { transform: none; opacity: 1; pointer-events: auto; }
+#snack .msg { flex: 1; padding: 10px 0; }
+#snack .btn.text { color: var(--inverse-primary); }
+#snack .icon-btn { color: var(--on-inverse); }
+dialog { border: 0; border-radius: 28px; padding: 24px; width: min(560px, calc(100% - 48px)); background: var(--container); color: var(--on); }
+dialog::backdrop { background: var(--scrim); }
+dialog h2 { font-size: 24px; line-height: 32px; font-weight: 400; margin: 0 0 16px; }
+dialog p { color: var(--on-var); margin: 0 0 8px; }
+dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+#signin { position: fixed; inset: 0; background: var(--bg); z-index: 15; display: none; align-items: center; justify-content: center; padding: 24px; }
+#signin form { width: 448px; max-width: 100%; background: var(--panel); border-radius: 28px; padding: 36px 40px 32px; }
+#signin svg.logo { width: 40px; height: 40px; color: var(--primary); }
+#signin h1 { font-size: 36px; line-height: 44px; font-weight: 400; margin: 16px 0 8px; }
+#signin p { margin: 0 0 32px; color: var(--on-var); font-size: 16px; line-height: 24px; }
+#signin .row { justify-content: space-between; margin-top: 32px; }
+#signin .check { display: flex; align-items: center; gap: 12px; margin-top: 12px; color: var(--on-var); }
+#signin .check input { width: 18px; height: 18px; accent-color: var(--primary); }
+
+/* ---- small screens: navigation bar at the bottom ---- */
+@media (max-width: 840px) {
+  .drawer { position: fixed; left: 0; right: 0; bottom: 0; width: auto; height: 80px; display: flex; justify-content: space-around; padding: 12px 0 16px; background: var(--container); z-index: 6; }
+  .drawer a { flex-direction: column; gap: 4px; height: auto; padding: 0; border-radius: 0; background: none !important; font-size: 12px; line-height: 16px; margin: 0; flex: 1; }
+  .drawer a svg { width: 64px; height: 32px; padding: 4px 20px; border-radius: 16px; }
+  .drawer a.on svg { background: var(--sec-c); }
+  .drawer a .lbl-long { display: none; }
+  .drawer a .badge { position: absolute; top: -2px; left: calc(50% + 8px); margin: 0; }
+  .panel { margin-right: 0; border-radius: 0; padding-bottom: 80px; }
+  .view { padding: 16px 16px 120px; }
+  .fields { grid-template-columns: 1fr; }
+  .topbar .live { display: none; }
+  #snack { left: 8px; right: 8px; bottom: 88px; min-width: 0; }
+  .doc { padding: 4px 16px 16px; }
+  .hero { flex-direction: column; align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
-<div id="login">
-  <form id="login-form">
-    <h2>Meeting captions</h2>
-    <p class="lead">Office hub administration. Enter the hub password to continue.</p>
-    <label>Password<input id="pw" type="password" autocomplete="current-password" autofocus></label>
-    <div class="actions"><button type="submit" class="primary">Log in</button><span class="msg bad" id="login-msg"></span></div>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-forum" viewBox="0 0 24 24"><path d="M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></symbol>
+  <symbol id="i-computer" viewBox="0 0 24 24"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></symbol>
+  <symbol id="i-err" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="m17 7-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></symbol>
+</svg>
+
+<!-- Sign in -->
+<div id="signin">
+  <form id="signin-form">
+    <svg class="i logo"><use href="#i-forum"/></svg>
+    <h1>Sign in</h1>
+    <p>to the meeting captions hub</p>
+    <div class="tf" id="pw-field">
+      <input id="pw" type="password" placeholder=" " autocomplete="current-password" required>
+      <label for="pw">Hub password</label>
+      <div class="help" id="pw-help"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="pw-show"> Show password</label>
+    <div class="row"><span class="muted">Ask the office admin for the password.</span><button class="btn filled" type="submit">Next</button></div>
   </form>
 </div>
 
-<header><div class="inner">
-  <h1>Meeting captions</h1>
-  <nav>
-    <a href="#overview" data-view="overview">Overview</a>
-    <a href="#meetings" data-view="meetings">Meetings</a>
-    <a href="#settings" data-view="settings">Settings</a>
-    <a href="#install" data-view="install">Install the agent</a>
+<div class="topbar">
+  <div class="brand"><svg class="i"><use href="#i-forum"/></svg>Meeting captions</div>
+  <div class="grow"></div>
+  <span class="live" id="health" role="status"></span>
+  <button class="icon-btn" id="logout" title="Sign out" aria-label="Sign out"><svg class="i"><use href="#i-logout"/></svg></button>
+</div>
+
+<div class="shell">
+  <nav class="drawer" aria-label="Main">
+    <a href="#overview" data-view="overview"><svg class="i"><use href="#i-home"/></svg><span>Overview</span><span class="badge" id="nav-badge" hidden></span></a>
+    <a href="#meetings" data-view="meetings"><svg class="i"><use href="#i-forum"/></svg><span>Meetings</span></a>
+    <a href="#settings" data-view="settings"><svg class="i"><use href="#i-settings"/></svg><span>Settings</span></a>
+    <a href="#install" data-view="install"><svg class="i"><use href="#i-computer"/></svg><span>Install<span class="lbl-long"> the agent</span></span></a>
   </nav>
-  <div class="right"><span id="health"></span><button class="quiet" id="logout">Log out</button></div>
-</div></header>
 
-<main>
-  <!-- Overview -->
-  <section class="view" id="view-overview">
-    <div class="status-line" id="status-line">Checking the hub…</div>
-    <div class="services" id="services"></div>
-    <h3>Needs attention</h3>
-    <ul class="issues" id="issues"></ul>
-    <section>
-      <h3>Recent meetings</h3>
-      <ul class="mlist" id="recent"></ul>
-      <a href="#meetings">All meetings</a>
+  <main class="panel" id="panel">
+    <div class="progress" id="progress" aria-hidden="true"></div>
+    <div id="conn-banner" class="banner err top" hidden>
+      <div class="ico"><svg class="i"><use href="#i-err"/></svg></div>
+      <div class="txt"><b>Can't reach the hub</b><span id="conn-detail">Retrying automatically.</span></div>
+      <div class="acts"><button class="btn text" onclick="refresh()">Try now</button></div>
+    </div>
+
+    <!-- Overview -->
+    <section class="view" id="view-overview">
+      <div class="hero" id="hero"><div class="big"><svg class="i"><use href="#i-info"/></svg></div>
+        <div><h1 class="headline" id="hero-title">Checking the hub…</h1><p id="hero-sub"></p></div></div>
+      <div class="svc-grid" id="services"></div>
+      <div id="issues"></div>
+      <h2 class="section">Recent meetings</h2>
+      <ul class="list" id="recent"></ul>
+      <div class="row"><a class="btn text" href="#meetings">See all meetings</a></div>
     </section>
-  </section>
 
-  <!-- Meetings -->
-  <section class="view" id="view-meetings">
-    <h2>Meetings</h2>
-    <p class="lead">Every meeting that produced captions. Open one to read its minutes or everything that was said.</p>
-    <ul class="mlist" id="mrows"></ul>
-  </section>
+    <!-- Meetings -->
+    <section class="view" id="view-meetings">
+      <header><h1 class="headline grow">Meetings</h1></header>
+      <label class="search"><svg class="i"><use href="#i-search"/></svg><span class="sr">Search meetings</span>
+        <input id="q" type="search" placeholder="Search by meeting name or person"></label>
+      <ul class="list" id="mrows"></ul>
+    </section>
 
-  <!-- Meeting detail -->
-  <section class="view" id="view-meeting">
-    <a href="#meetings">‹ All meetings</a>
-    <div class="detail-bar" style="margin-top:8px">
-      <h2 id="d-title"></h2>
-      <div class="tabs"><button class="tab on" data-tab="minutes">Minutes</button><button class="tab" data-tab="transcript">What was said</button></div>
-      <a id="d-live" target="_blank">Live captions page</a>
-      <button id="d-finalize" class="primary">Write minutes</button>
-    </div>
-    <div id="d-body"></div>
-  </section>
-
-  <!-- Settings -->
-  <section class="view" id="view-settings">
-    <h2>Settings</h2>
-    <p class="lead">Changes apply to every workstation as soon as you save. Use “Check connection” to try values before saving.</p>
-    <form id="form" onsubmit="return false">
-      <div class="block">
-        <h3>Speech recognition <span class="state" id="st-tr"></span></h3>
-        <p>Turns everyone's microphone audio into captions. Runs on the hub's GPU (WhisperLive).</p>
-        <label class="field"><span>Mode</span><select name="transcriber"><option value="whisperlive">Normal (GPU, WhisperLive)</option><option value="mock">Test mode, no GPU (scripted captions)</option></select></label>
-        <label class="field"><span>WhisperLive address</span><input name="whisperlive_url"></label>
-        <label class="field"><span>Speech model</span><input name="whisper_model" list="whisper-models"><span class="help">A Hugging Face id with a “/”. Saving a different model restarts speech recognition; the first use downloads it (minutes).</span></label>
-        <datalist id="whisper-models">
-          <option value="deepdml/faster-whisper-large-v3-turbo-ct2">fast and accurate (default)</option>
-          <option value="Systran/faster-whisper-large-v3">most accurate, about 3× slower</option>
-          <option value="Systran/faster-whisper-medium">for smaller GPUs</option>
-        </datalist>
-        <div class="actions"><button type="button" onclick="checkConn('whisperlive')">Check connection</button><button type="button" onclick="restartWL()">Restart speech recognition</button><span class="msg" id="msg-whisperlive"></span></div>
+    <!-- Meeting detail -->
+    <section class="view" id="view-meeting">
+      <header>
+        <a class="icon-btn" href="#meetings" title="All meetings" aria-label="All meetings"><svg class="i"><use href="#i-back"/></svg></a>
+        <h1 class="headline grow" id="d-title"></h1>
+        <button class="btn filled has-i" id="d-finalize"><svg class="i s"><use href="#i-doc"/></svg><span>Write minutes</span></button>
+      </header>
+      <div class="meta-chips" id="d-meta"></div>
+      <div class="row" style="margin:0 0 20px">
+        <div class="seg" role="tablist">
+          <button class="tab on" data-tab="minutes" role="tab"><svg class="i s"><use href="#i-check"/></svg>Minutes</button>
+          <button class="tab" data-tab="transcript" role="tab"><svg class="i s"><use href="#i-check"/></svg>What was said</button>
+        </div>
+        <div style="flex:1"></div>
+        <button class="icon-btn" id="d-copy" title="Copy the minutes" aria-label="Copy the minutes"><svg class="i"><use href="#i-copy"/></svg></button>
+        <button class="icon-btn" id="d-download" title="Download the minutes" aria-label="Download the minutes"><svg class="i"><use href="#i-download"/></svg></button>
+        <a class="icon-btn" id="d-live" target="_blank" title="Open live captions" aria-label="Open live captions"><svg class="i"><use href="#i-open"/></svg></a>
       </div>
+      <div id="d-status"></div>
+      <div id="d-body"></div>
+    </section>
 
-      <div class="block">
-        <h3>Minutes writer <span class="state" id="st-llm"></span></h3>
-        <p>The language model that turns a transcript into minutes with decisions and action items. Uses the Ollama already running on the server.</p>
-        <label class="field"><span>Ollama address</span><input name="ollama_url"></label>
-        <label class="field"><span>Model</span><input name="ollama_model" list="ollama-models"><span class="help" id="llm-hint"></span></label>
-        <datalist id="ollama-models"></datalist>
-        <div class="actions"><button type="button" onclick="checkConn('ollama')">Check connection</button><span class="msg" id="msg-ollama"></span></div>
-      </div>
+    <!-- Settings -->
+    <section class="view" id="view-settings">
+      <header><h1 class="headline grow">Settings</h1></header>
+      <div id="settings-banner"></div>
+      <p class="muted" style="margin:-12px 0 24px">Changes apply to everyone as soon as you save. Check a connection before saving to try the values you typed.</p>
+      <form id="form" onsubmit="return false" autocomplete="off">
+        <div class="card">
+          <div class="head"><h2 class="title-m grow">Speech recognition</h2><span id="st-tr"></span></div>
+          <p>Turns everyone's microphone into captions. Runs on the server's graphics card.</p>
+          <div class="fields">
+            <div class="tf"><select name="transcriber" id="f-tr"><option value="whisperlive">Normal</option><option value="mock">Test mode, scripted captions</option></select><label for="f-tr">Mode</label></div>
+            <div class="tf"><input name="whisperlive_url" id="f-wl" placeholder=" "><label for="f-wl">Recognition service address</label></div>
+            <div class="tf full"><input name="whisper_model" id="f-wm" placeholder=" " list="whisper-models"><label for="f-wm">Speech model</label>
+              <div class="help">Changing it restarts speech recognition for about a minute; a new model is downloaded the first time.</div></div>
+          </div>
+          <datalist id="whisper-models">
+            <option value="deepdml/faster-whisper-large-v3-turbo-ct2">Fast and accurate (recommended)</option>
+            <option value="Systran/faster-whisper-large-v3">Most accurate, about 3 times slower</option>
+            <option value="Systran/faster-whisper-medium">For smaller graphics cards</option>
+          </datalist>
+          <div class="row"><button type="button" class="btn tonal" onclick="checkConn('whisperlive')">Check connection</button>
+            <button type="button" class="btn text" onclick="restartWL()">Restart speech recognition</button></div>
+          <div class="result" id="msg-whisperlive"></div>
+        </div>
 
-      <div class="block">
-        <h3>Odoo <span class="state" id="st-odoo"></span></h3>
-        <p>Where the minutes are published: one task per meeting, plus a sub-task per action item assigned to its owner. Leave empty to only keep the minutes on the hub.</p>
-        <label class="field"><span>Odoo address</span><input name="odoo_url" placeholder="http://host.docker.internal:8069"></label>
-        <label class="field"><span>Database</span><input name="odoo_db"></label>
-        <label class="field"><span>User</span><input name="odoo_user" placeholder="login or e-mail"></label>
-        <label class="field"><span>API key</span><input name="odoo_api_key" type="password" autocomplete="new-password"><span class="help">Created in Odoo under Preferences, Account security. Never shown again here.</span></label>
-        <label class="field"><span>Project</span><input name="odoo_project_id" type="number" min="1" placeholder="project id, from the URL in Odoo"></label>
-        <label class="field"><span>Name mapping</span><textarea name="speaker_aliases" placeholder='{"Ginadomenico": "Gian Domenico Bianchi"}'></textarea><span class="help">Only when a colleague's name in the agent differs from their name in Odoo. JSON, agent name on the left.</span></label>
-        <div class="actions"><button type="button" onclick="checkConn('odoo')">Check login</button><span class="msg" id="msg-odoo"></span></div>
-      </div>
+        <div class="card">
+          <div class="head"><h2 class="title-m grow">Minutes writer</h2><span id="st-llm"></span></div>
+          <p>The language model that turns what was said into minutes with decisions and action items.</p>
+          <div class="fields">
+            <div class="tf"><input name="ollama_url" id="f-ou" placeholder=" "><label for="f-ou">Ollama address</label></div>
+            <div class="tf"><input name="ollama_model" id="f-om" placeholder=" " list="ollama-models"><label for="f-om">Model</label><div class="help" id="llm-hint"></div></div>
+          </div>
+          <datalist id="ollama-models"></datalist>
+          <div class="row"><button type="button" class="btn tonal" onclick="checkConn('ollama')">Check connection</button></div>
+          <div class="result" id="msg-ollama"></div>
+        </div>
 
-      <div class="block">
-        <h3>Captions</h3>
-        <p>When two PCs in the same room hear the same sentence, only the louder microphone's caption is kept.</p>
-        <label class="field"><span>Delay before showing (s)</span><input name="dedup_hold_s" type="number" step="0.1" min="0"><span class="help">How long a finished sentence waits for a possible duplicate. 0 shows captions immediately and disables the check.</span></label>
-        <label class="field"><span>Same sentence within (s)</span><input name="dedup_window_s" type="number" step="0.1" min="0"></label>
-        <label class="field"><span>Similarity needed</span><input name="dedup_similarity" type="number" step="0.01" min="0" max="1"><span class="help">0.78 tolerates recognition differences between the two microphones.</span></label>
-      </div>
+        <div class="card">
+          <div class="head"><h2 class="title-m grow">Odoo</h2><span id="st-odoo"></span></div>
+          <p>Publishes each meeting's minutes as a task, with one sub-task per action item assigned to its owner. Leave empty to keep minutes on the hub only.</p>
+          <div class="fields">
+            <div class="tf full"><input name="odoo_url" id="f-du" placeholder=" "><label for="f-du">Odoo address</label><div class="help">On the same server as the hub: http://host.docker.internal:8069</div></div>
+            <div class="tf"><input name="odoo_db" id="f-dd" placeholder=" "><label for="f-dd">Database</label></div>
+            <div class="tf"><input name="odoo_user" id="f-dn" placeholder=" "><label for="f-dn">User (login or email)</label></div>
+            <div class="tf"><input name="odoo_api_key" id="f-dk" type="password" placeholder=" " autocomplete="new-password"><label for="f-dk">API key</label><div class="help" id="key-help">Odoo, Preferences, Account security, New API key</div></div>
+            <div class="tf"><input name="odoo_project_id" id="f-dp" type="number" min="1" placeholder=" "><label for="f-dp">Project ID</label><div class="help">The number after /project/ in the project's address in Odoo</div></div>
+            <div class="tf full"><textarea name="speaker_aliases" id="f-da" placeholder=" "></textarea><label for="f-da">Names that differ in Odoo (optional)</label>
+              <div class="help">One per line, caption name = Odoo name. For example: Ginadomenico = Gian Domenico Bianchi</div></div>
+          </div>
+          <div class="row"><button type="button" class="btn tonal" onclick="checkConn('odoo')">Check sign-in</button></div>
+          <div class="result" id="msg-odoo"></div>
+        </div>
 
-      <div class="block">
-        <h3>Defaults for new PCs</h3>
-        <p>Pre-filled in the configuration that new PCs download. Each person can still change them.</p>
-        <label class="field"><span>Meeting name</span><input name="default_meeting" pattern="[A-Za-z0-9_-]{1,64}"><span class="help">Everyone using the same meeting name sees each other's captions. Letters, digits, - and _.</span></label>
-        <label class="field"><span>Language</span><input name="default_language" list="langs"><span class="help">“auto” detects the language per sentence.</span></label>
-        <datalist id="langs"><option value="auto"><option value="it"><option value="en"><option value="de"><option value="fr"><option value="es"></datalist>
-      </div>
-      <div id="savebar">
-        <button type="button" class="primary" id="btn-save" onclick="saveSettings()">Save changes</button>
-        <button type="button" onclick="fill(); say('#msg-save', '')">Discard</button>
-        <span class="msg" id="msg-save"></span>
-      </div>
-    </form>
-  </section>
+        <div class="card">
+          <div class="head"><h2 class="title-m grow">Noise and same-room microphones</h2></div>
+          <p>Sentences quieter than the background noise level are treated as room noise, which stops speech recognition from inventing phrases like “Thank you.” over silence. When two computers in one room hear the same sentence, only the louder microphone's caption is kept.</p>
+          <div class="fields">
+            <div class="tf"><input name="noise_floor_rms" id="f-n" type="number" step="0.001" min="0" max="1" placeholder=" "><label for="f-n">Background noise level</label><div class="help">0.005 suits most rooms. Raise it if captions show things nobody said; lower it if quiet speakers are missed; 0 turns it off.</div></div>
+            <div class="tf"><input name="dedup_hold_s" id="f-h" type="number" step="0.1" min="0" placeholder=" "><label for="f-h">Wait before showing (seconds)</label><div class="help">0 shows captions at once and turns this off</div></div>
+            <div class="tf"><input name="dedup_window_s" id="f-w" type="number" step="0.1" min="0" placeholder=" "><label for="f-w">Same sentence within (seconds)</label></div>
+            <div class="tf"><input name="dedup_similarity" id="f-s" type="number" step="0.01" min="0" max="1" placeholder=" "><label for="f-s">How similar (0 to 1)</label><div class="help">0.78 tolerates small recognition differences</div></div>
+          </div>
+        </div>
 
-  <!-- Install -->
-  <section class="view" id="view-install">
-    <h2>Install the agent on a PC</h2>
-    <p class="lead">The agent streams the microphone to this hub and shows the captions. Takes about a minute per PC.</p>
-    <div class="block">
-      <div id="agent-info" class="msg" style="margin-bottom:6px"></div>
-      <div class="downloads">
-        <a href="/download/OfficeMeetingAgent.exe" id="dl-exe">Download OfficeMeetingAgent.exe</a>
-        <a href="/download/config.json" download="config.json" class="second">Download config.json</a>
+        <div class="card">
+          <div class="head"><h2 class="title-m grow">New computers</h2></div>
+          <p>Filled in for people who install the agent. Everyone can still change them.</p>
+          <div class="fields">
+            <div class="tf"><input name="default_meeting" id="f-dm" placeholder=" "><label for="f-dm">Meeting name</label><div class="help">Same name, same captions. Letters, digits, - and _</div></div>
+            <div class="tf"><select name="default_language" id="f-dl">
+              <option value="auto">Detect automatically</option><option value="it">Italian</option><option value="en">English</option>
+              <option value="de">German</option><option value="fr">French</option><option value="es">Spanish</option></select><label for="f-dl">Language</label></div>
+          </div>
+        </div>
+
+        <div class="savebar" id="savebar" role="region" aria-label="Unsaved changes">
+          <span class="grow">You have unsaved changes</span>
+          <button type="button" class="btn text" onclick="discard()">Discard</button>
+          <button type="button" class="btn filled" id="btn-save" onclick="saveSettings()">Save</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Install -->
+    <section class="view" id="view-install">
+      <header><h1 class="headline grow">Install the agent</h1></header>
+      <div class="card">
+        <div class="head"><h2 class="title-m grow">On a new computer</h2><span id="st-agent"></span></div>
+        <p>The agent sends the microphone to this hub and shows everyone's captions. About a minute per computer.</p>
+        <div class="row" style="margin-top:0">
+          <a class="btn filled has-i" id="dl-exe" href="/download/OfficeMeetingAgent.exe"><svg class="i s"><use href="#i-download"/></svg>Download the agent</a>
+          <a class="btn tonal has-i" href="/download/config.json" download="config.json"><svg class="i s"><use href="#i-download"/></svg>Download settings file</a>
+        </div>
+        <ol class="steps">
+          <li><b>Put both files in one folder</b><span>For example C:\MeetingAgent. The settings file already points to this hub.</span></li>
+          <li><b>Open OfficeMeetingAgent.exe</b><span>If Windows says the publisher is unknown, choose More info, then Run anyway. Type your name as it should appear in captions.</span></li>
+          <li><b>Join meetings from the tray icon</b><span>Captions appear in a small strip at the bottom right. Pause, change meeting or write the minutes from the tray icon.</span></li>
+        </ol>
       </div>
-      <ol class="steps">
-        <li><b>Create a folder on the PC, for example <code>C:\MeetingAgent</code></b><span>Save both files into it. config.json already contains this hub's address and the default meeting.</span></li>
-        <li><b>Start OfficeMeetingAgent.exe</b><span>Windows may warn that the publisher is unknown: choose “More info”, then “Run anyway”. The agent asks for the person's name as it should appear in captions.</span></li>
-        <li><b>Use the caption strip and the tray icon</b><span>The strip sits bottom-right, half transparent, and can be dragged or hidden. The tray icon pauses or stops streaming, changes meeting, and writes the minutes at the end.</span></li>
-      </ol>
-    </div>
-    <div class="block">
-      <h3>For maintainers</h3>
-      <p>Needed only when the agent's code changes. The agent is built on a Windows PC with Python 3.11 or 3.12 (<code>client\build_exe.bat</code>) and uploaded here; every PC downloads this one copy.</p>
-      <details><summary>Upload a new OfficeMeetingAgent.exe</summary>
-        <div class="actions"><input type="file" id="exe" accept=".exe" style="width:auto"><button type="button" onclick="upload()">Upload</button><span class="msg" id="msg-upload"></span></div>
-      </details>
-    </div>
-  </section>
-</main>
+      <div class="card">
+        <div class="head"><h2 class="title-m grow">Update the agent for everyone</h2></div>
+        <p>Only after the agent's code changes. Build it on a Windows computer with <code>client\build_exe.bat</code>, then upload it here.</p>
+        <details id="upload-box"><summary>Upload a new version</summary>
+          <div class="row"><input type="file" id="exe" accept=".exe"><button type="button" class="btn tonal" onclick="upload()">Upload</button></div>
+        </details>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="dlg">
+  <h2 id="dlg-title"></h2>
+  <p id="dlg-text"></p>
+  <div class="acts"><button class="btn text" id="dlg-cancel">Cancel</button><button class="btn text" id="dlg-ok"></button></div>
+</dialog>
+
+<div id="snack" role="status" aria-live="polite"><span class="msg" id="snack-msg"></span><span id="snack-act"></span>
+  <button class="icon-btn" aria-label="Dismiss" onclick="snackHide()"><svg class="i s"><use href="#i-close"/></svg></button></div>
 
 <script>
+"use strict";
 const $ = s => document.querySelector(s);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const icon = (name, cls = "i") => `<svg class="${cls}"><use href="#i-${name}"/></svg>`;
 const fmtDate = ts => ts ? new Date(ts * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+const fmtTime = ts => typeof ts === "number" ? new Date(ts * 1000).toLocaleTimeString([], { timeStyle: "short" }) : "";
 const fmtDur = (a, b) => { if (!a || !b) return ""; const m = Math.max(1, Math.round((b - a) / 60)); return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? " " + m % 60 + " min" : ""}` : `${m} min`; };
-const say = (id, text, ok) => { const m = $(id); m.textContent = text; m.className = "msg " + (ok === undefined ? "" : ok ? "ok" : "bad"); };
-const dotHtml = s => `<span class="dot ${s}"></span>`;
-let current = null, rows = [], selected = null, tab = "minutes", dirty = false;
+const hue = name => { let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+const avatar = name => `<span class="avatar" style="background:hsl(${hue(name)} 70% 88%);color:hsl(${hue(name)} 60% 25%)">${esc(String(name).trim().charAt(0).toUpperCase() || "?")}</span>`;
+const go = hash => () => { location.hash = hash; };
+let current = null, rows = [], selected = null, tab = "minutes", dirty = false, busy = 0, conflict = false, myFinalize = null;
+let loaded = {};  // settings as they were when this form was filled: the base for "what did I change"
 
-// ---- auth: password kept for the browser session, sent on every admin call; no browser dialog ever
+// ---------- snackbar: one at a time, queued ----------
+const snackQ = []; let snackOn = false, snackTimer = null;
+function snack(text, action, onAction, ms = 5000) { snackQ.push({ text, action, onAction, ms }); if (!snackOn) snackNext(); }
+function snackNext() {
+  const s = snackQ.shift(); if (!s) return;
+  snackOn = true;
+  $("#snack-msg").textContent = s.text;
+  $("#snack-act").innerHTML = s.action ? `<button class="btn text">${esc(s.action)}</button>` : "";
+  if (s.action) $("#snack-act button").onclick = () => { snackHide(); s.onAction(); };
+  $("#snack").classList.add("on");
+  snackTimer = setTimeout(snackHide, s.ms);
+}
+function snackHide() { clearTimeout(snackTimer); $("#snack").classList.remove("on"); setTimeout(() => { snackOn = false; snackNext(); }, 220); }
+
+// ---------- dialog ----------
+function confirmDlg(title, text, ok) {
+  return new Promise(res => {
+    const d = $("#dlg"); let answered = false;
+    const done = v => { if (!answered) { answered = true; d.close(); res(v); } };
+    $("#dlg-title").textContent = title; $("#dlg-text").textContent = text; $("#dlg-ok").textContent = ok;
+    $("#dlg-ok").onclick = () => done(true); $("#dlg-cancel").onclick = () => done(false); d.onclose = () => done(false);
+    d.showModal(); $("#dlg-cancel").focus();
+  });
+}
+
+// ---------- progress bar + api with sign-in ----------
+function setBusy(delta) { busy = Math.max(0, busy + delta); $("#progress").classList.toggle("on", busy > 0); }
 let token = sessionStorage.getItem("hubauth") || "";
 const auth = () => token ? { Authorization: "Basic " + token } : {};
-function login(msg) { $("#login").style.display = "flex"; $("#login-msg").textContent = msg || ""; $("#pw").focus(); }
-$("#login-form").onsubmit = e => {
+function signin(msg) {
+  $("#signin").style.display = "flex";
+  $("#pw-field").classList.toggle("error", !!msg); $("#pw-help").textContent = msg || "";
+  setTimeout(() => $("#pw").focus(), 50);
+}
+$("#pw-show").onchange = e => { $("#pw").type = e.target.checked ? "text" : "password"; };
+$("#signin-form").onsubmit = e => {
   e.preventDefault();
-  token = btoa("admin:" + $("#pw").value); sessionStorage.setItem("hubauth", token); $("#pw").value = "";
-  $("#login").style.display = "none"; refresh();
+  token = btoa(unescape(encodeURIComponent("admin:" + $("#pw").value))); sessionStorage.setItem("hubauth", token);
+  $("#pw").value = ""; $("#signin").style.display = "none"; refresh();
 };
-$("#logout").onclick = () => { token = ""; sessionStorage.removeItem("hubauth"); login(); };
-const api = async (url, opt = {}) => {
-  const r = await fetch(url, { ...opt, headers: { "Content-Type": "application/json", ...auth(), ...(opt.headers || {}) } });
-  const j = await r.json().catch(() => ({}));
-  if (r.status === 401 || r.status === 403) {
-    login(r.status === 403 ? j.detail : (token ? "That password is not correct." : ""));
-    if (r.status === 401) { token = ""; sessionStorage.removeItem("hubauth"); }
-    throw new Error(j.detail || "login required");
-  }
-  if (!r.ok) throw new Error(j.detail || r.status);
-  return j;
-};
+$("#logout").onclick = () => { token = ""; sessionStorage.removeItem("hubauth"); signin(); };
+async function api(url, opt = {}) {
+  setBusy(1);
+  try {
+    let r;
+    try { r = await fetch(url, { ...opt, headers: { "Content-Type": "application/json", ...auth(), ...(opt.headers || {}) } }); }
+    catch (e) { const err = new Error("the hub doesn't answer"); err.network = true; throw err; }
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401 || r.status === 403) {
+      const hadToken = !!token;
+      if (r.status === 401) { token = ""; sessionStorage.removeItem("hubauth"); }
+      signin(r.status === 403 ? j.detail : hadToken ? "Wrong password. Try again." : "");
+      const e = new Error(j.detail || "sign-in required"); e.auth = true; throw e;
+    }
+    if (!r.ok) { const e = new Error(j.detail || `HTTP ${r.status}`); e.status = r.status; throw e; }
+    return j;
+  } finally { setBusy(-1); }
+}
 
-// ---- views (hash routing)
+// ---------- routing ----------
 function show(view) {
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === "view-" + view));
-  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.view === (view === "meeting" ? "meetings" : view)));
-  window.scrollTo(0, 0);
+  document.querySelectorAll(".drawer a").forEach(a => a.classList.toggle("on", a.dataset.view === (view === "meeting" ? "meetings" : view)));
+  $("#panel").scrollTop = 0;
 }
 function route() {
-  const h = location.hash.slice(1) || "overview";
-  if (h.startsWith("meeting/")) { selected = decodeURIComponent(h.slice(8)); tab = "minutes"; show("meeting"); showDetail(); }
+  const h = decodeURIComponent(location.hash.slice(1)) || "overview";
+  if (h.startsWith("meeting/")) { const id = h.slice(8); if (id !== selected) tab = "minutes"; selected = id; show("meeting"); showDetail(); }
   else { selected = null; show(["overview", "meetings", "settings", "install"].includes(h) ? h : "overview"); }
 }
 window.addEventListener("hashchange", route);
 
-// ---- overview
-function serviceCard(name, state, detail) { return `<div class="service"><div class="name">${dotHtml(state)}${esc(name)}</div><div class="detail">${detail}</div></div>`; }
+// ---------- overview ----------
+function computeIssues() {
+  const s = current.status, v = current.values, out = [];
+  const mock = v.transcriber === "mock";
+  if (!mock && !s.transcriber_reachable) out.push({ lvl: "err", t: "Speech recognition isn't answering", d: "Nobody gets captions until it's back. It restarts by itself after a model change; if not, restart it.", acts: [["Restart", restartWL], ["Open settings", go("settings")]] });
+  if (mock) out.push({ lvl: "warn", t: "Test mode is on", d: "Captions are scripted, not real speech. Switch the mode back to Normal for real meetings.", acts: [["Open settings", go("settings")]] });
+  if (!s.llm_reachable) out.push({ lvl: "warn", t: "The minutes writer isn't reachable", d: `Captions still work. Until it's back, writing minutes gives a plain transcript. Nothing answers at ${v.ollama_url}.`, acts: [["Open settings", go("settings")]] });
+  else if (!s.llm_model_pulled) out.push({ lvl: "warn", t: `The model ${v.ollama_model} isn't installed`, d: "Pick one of the installed models in Settings, or install it on the server with ollama pull.", acts: [["Choose a model", go("settings")]] });
+  if (!s.odoo_configured) out.push({ lvl: "info", t: "Odoo isn't set up", d: "Minutes stay on the hub. Add the Odoo address and an API key to publish them as tasks.", acts: [["Set up Odoo", go("settings")]] });
+  else if (!s.odoo_reachable) out.push({ lvl: "err", t: "Odoo isn't answering", d: `Minutes are kept on the hub until it's back. Nothing answers at ${v.odoo_url}.`, acts: [["Open settings", go("settings")]] });
+  if (!s.agent) out.push({ lvl: "warn", t: "No agent to download yet", d: "New computers can't join until someone uploads the agent.", acts: [["Upload", go("install")]] });
+  return out;
+}
+// banners are built as DOM so their actions are real functions, never strings evaluated from data
+function banner(b) {
+  const el = document.createElement("div");
+  el.className = "banner " + b.lvl;
+  el.innerHTML = `<div class="ico">${icon({ err: "err", warn: "warn", info: "info", ok: "ok" }[b.lvl])}</div><div class="txt"><b>${esc(b.t)}</b><span>${esc(b.d)}</span></div><div class="acts"></div>`;
+  for (const [label, fn] of b.acts || []) {
+    const btn = document.createElement("button"); btn.className = "btn text"; btn.textContent = label; btn.onclick = fn;
+    el.querySelector(".acts").append(btn);
+  }
+  return el;
+}
+function svc(name, lvl, detail) { return `<div class="svc"><span class="dot ${lvl}"></span><div><b>${esc(name)}</b><span>${esc(detail)}</span></div></div>`; }
 function renderOverview() {
   if (!current) return;
-  const s = current.status, v = current.values, issues = [];
+  const s = current.status, v = current.values, issues = computeIssues();
+  const errs = issues.filter(i => i.lvl === "err").length, warns = issues.filter(i => i.lvl === "warn").length;
+  const hero = $("#hero");
+  hero.className = "hero " + (errs ? "err" : warns ? "warn" : "ok");
+  hero.querySelector(".big").innerHTML = icon(errs ? "err" : warns ? "warn" : "ok");
+  $("#hero-title").textContent = errs ? "Captions aren't working right now" : warns ? "Captions work, a few things need a look" : "Everything is ready for the next meeting";
+  const live = Object.entries(s.live_rooms);
+  $("#hero-sub").textContent = live.length ? `Live now: ${live.map(([id, sp]) => `${id} (${sp.length} ${sp.length === 1 ? "person" : "people"} speaking)`).join(", ")}.`
+    : `No meeting in progress. ${s.meetings} ${s.meetings === 1 ? "meeting" : "meetings"} on record.`;
   const mock = v.transcriber === "mock";
-  const trOk = mock || s.transcriber_reachable;
-  const llmOk = s.llm_reachable && s.llm_model_pulled;
-  const odooState = !s.odoo_configured ? "" : s.odoo_reachable ? "ok" : "bad";
-  if (!trOk) issues.push({ lvl: "bad", t: "Speech recognition is not answering", d: "Nobody gets captions until it is back. It restarts by itself after a model change; otherwise check the WhisperLive container on the server.", a: `<button onclick="restartWL()">Restart speech recognition</button><a href="#settings">Settings</a>` });
-  if (mock) issues.push({ lvl: "warn", t: "Test mode is on", d: "Captions are scripted, not real speech. Switch the mode to Normal for real meetings.", a: `<a href="#settings">Settings</a>` });
-  if (!s.llm_reachable) issues.push({ lvl: "warn", t: "Minutes writer is not reachable", d: `No Ollama answers at ${esc(v.ollama_url)}. Meetings can still be captioned; writing minutes gives a plain transcript until this is fixed.`, a: `<a href="#settings">Settings</a>` });
-  else if (!s.llm_model_pulled) issues.push({ lvl: "warn", t: `Model ${esc(v.ollama_model)} is not installed on Ollama`, d: `On the server run: ollama pull ${esc(v.ollama_model)}, or choose one of the installed models in Settings.`, a: `<a href="#settings">Settings</a>` });
-  if (!s.odoo_configured) issues.push({ lvl: "warn", t: "Odoo is not set up", d: "Minutes stay on the hub only. Enter the Odoo address, database, user and API key to publish them as tasks.", a: `<a href="#settings">Set up Odoo</a>` });
-  else if (!s.odoo_reachable) issues.push({ lvl: "bad", t: "Odoo is not answering", d: `Nothing answers at ${esc(v.odoo_url)}. Minutes will be kept on the hub until it is back.`, a: `<a href="#settings">Settings</a>` });
-  if (!s.agent) issues.push({ lvl: "warn", t: "No agent available for download", d: "New PCs cannot install the agent until a build is uploaded.", a: `<a href="#install">Install the agent</a>` });
-  const bad = issues.filter(i => i.lvl === "bad").length;
-  const line = $("#status-line");
-  line.className = "status-line " + (bad ? "bad" : issues.length ? "warn" : "");
-  const live = Object.keys(s.live_rooms).length;
-  line.textContent = bad ? "Captions are not working right now." : issues.length ? "Captions work. Some things need attention." : "Everything is ready for the next meeting.";
   $("#services").innerHTML = [
-    serviceCard("Speech recognition", trOk ? "ok" : "bad", mock ? "test mode" : trOk ? `ready, model ${esc(v.whisper_model.split("/").pop())}` : "not answering"),
-    serviceCard("Minutes writer", llmOk ? "ok" : "warn", s.llm_reachable ? (s.llm_model_pulled ? `ready, ${esc(v.ollama_model)}` : "model not installed") : "not reachable"),
-    serviceCard("Odoo", odooState, s.odoo_configured ? (s.odoo_reachable ? `publishing to ${esc(v.odoo_db)}` : "not answering") : "not set up"),
-    serviceCard("Right now", live ? "ok" : "", live ? Object.entries(s.live_rooms).map(([id, sp]) => `${esc(id)}: ${sp.map(esc).join(", ") || "no one speaking"}`).join("<br>") : `no meeting in progress, ${s.meetings} on record`),
+    svc("Speech recognition", mock ? "warn" : s.transcriber_reachable ? "ok" : "err", mock ? "Test mode" : s.transcriber_reachable ? `Ready, ${String(v.whisper_model).split("/").pop()}` : "Not answering"),
+    svc("Minutes writer", s.llm_reachable && s.llm_model_pulled ? "ok" : "warn", s.llm_reachable ? (s.llm_model_pulled ? `Ready, ${v.ollama_model}` : "Model not installed") : "Not reachable"),
+    svc("Odoo", !s.odoo_configured ? "" : s.odoo_reachable ? "ok" : "err", s.odoo_configured ? (s.odoo_reachable ? `Publishing to ${v.odoo_db}` : "Not answering") : "Not set up"),
+    svc("Agent download", s.agent ? "ok" : "warn", s.agent ? `Version of ${fmtDate(s.agent.modified)}` : "Not uploaded"),
   ].join("");
-  $("#issues").innerHTML = issues.length ? issues.map(i => `<li class="${i.lvl}"><div class="text"><b>${i.t}</b><span>${i.d}</span></div>${i.a}</li>`).join("")
-                                         : `<li style="border-color:var(--ok)"><div class="text"><b>Nothing.</b><span>Speech recognition, the minutes writer${s.odoo_configured ? ", Odoo" : ""} and the agent download are all in place.</span></div></li>`;
+  const box = $("#issues"); box.replaceChildren();
+  if (issues.length) { const h = document.createElement("h2"); h.className = "section"; h.textContent = "Needs your attention"; box.append(h, ...issues.map(banner)); }
+  const badge = $("#nav-badge"); badge.hidden = !(errs + warns); badge.textContent = errs + warns;
 }
 
-// ---- meetings
-function stateChip(m) {
-  if (!m) return `<span class="chip">no minutes yet</span>`;
-  if (m.status === "file_only") return `<span class="chip warn">minutes file</span>`;
-  if (!m.llm) return `<span class="chip bad">transcript only</span>`;
-  return m.odoo && m.odoo.status === "published" ? `<span class="chip ok">minutes in Odoo, task ${esc(m.odoo.parent_task_id)}</span>` : `<span class="chip ok">minutes ready</span>`;
+// ---------- meetings ----------
+function stateChip(r) {
+  const m = r.minutes;
+  if (r.finalizing) return `<span class="chip info">Writing minutes…</span>`;
+  if (!m) return `<span class="chip">No minutes yet</span>`;
+  if (m.status === "file_only") return `<span class="chip warn">${icon("doc")}Minutes file</span>`;
+  if (!m.llm) return `<span class="chip err">${icon("warn")}Transcript only</span>`;
+  if (m.odoo && m.odoo.status !== "published" && m.odoo.reason && !/not configured/i.test(m.odoo.reason)) return `<span class="chip warn">${icon("warn")}Not in Odoo</span>`;
+  return m.odoo && m.odoo.status === "published" ? `<span class="chip ok">${icon("ok")}In Odoo</span>` : `<span class="chip ok">${icon("ok")}Minutes ready</span>`;
 }
 function meetingItem(r) {
-  return `<li onclick="location.hash='meeting/${encodeURIComponent(r.meeting_id)}'">
-    <div class="title">${esc(r.meeting_id)}${r.live ? ' <span class="chip live">live</span>' : ""}</div>
-    <div class="state">${stateChip(r.minutes)}</div>
-    <div class="meta">${fmtDate(r.started)}${r.started ? ", " + fmtDur(r.started, r.ended) : ""} with ${r.speakers.map(esc).join(", ") || "nobody"}, ${r.segments} sentences</div>
-  </li>`;
+  const people = r.speakers.length ? r.speakers.join(", ") : "nobody yet";
+  return `<li class="click" tabindex="0" data-id="${esc(r.meeting_id)}">
+    <span class="avatar">${icon("forum")}</span>
+    <div class="body"><div class="head-l">${esc(r.meeting_id)}${r.live ? ` <span class="chip ok" style="height:24px">${icon("mic")}Live</span>` : ""}</div>
+      <div class="sup">${esc([fmtDate(r.started), fmtDur(r.started, r.ended), people, `${r.segments} ${r.segments === 1 ? "sentence" : "sentences"}`].filter(Boolean).join(", "))}</div></div>
+    ${stateChip(r)}</li>`;
 }
+function bindRows(el) {
+  el.querySelectorAll("li.click").forEach(li => {
+    const open = go("meeting/" + encodeURIComponent(li.dataset.id));
+    li.onclick = open; li.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+  });
+}
+function renderMeetings() {
+  const q = $("#q").value.trim().toLowerCase();
+  const list = q ? rows.filter(r => r.meeting_id.toLowerCase().includes(q) || r.speakers.some(s => s.toLowerCase().includes(q))) : rows;
+  const none = `<li class="empty">${icon("forum")}<b>No meetings yet</b>As soon as someone starts the agent and speaks, the meeting shows up here.</li>`;
+  $("#mrows").innerHTML = list.length ? list.map(meetingItem).join("")
+    : rows.length ? `<li class="empty">${icon("search")}<b>No match for “${esc(q)}”</b>Try a meeting name or a person's name.</li>` : none;
+  $("#recent").innerHTML = rows.length ? rows.slice(0, 5).map(meetingItem).join("") : none;
+  bindRows($("#mrows")); bindRows($("#recent"));
+}
+$("#q").addEventListener("input", renderMeetings);
 async function loadMeetings() {
+  const before = new Map(rows.map(r => [r.meeting_id, r]));
   rows = await api("/api/meetings");
-  const empty = `<li style="cursor:default"><div class="empty">No meetings yet. As soon as someone starts the agent and speaks, the meeting appears here.</div></li>`;
-  $("#mrows").innerHTML = rows.length ? rows.map(meetingItem).join("") : empty;
-  $("#recent").innerHTML = rows.length ? rows.slice(0, 4).map(meetingItem).join("") : empty;
+  for (const r of rows) {  // tell everyone watching when minutes someone else started are done
+    const b = before.get(r.meeting_id);
+    if (b && b.finalizing && !r.finalizing && myFinalize !== r.meeting_id)
+      snack(`Minutes for ${r.meeting_id} are ready`, "View", go("meeting/" + encodeURIComponent(r.meeting_id)), 8000);
+  }
+  renderMeetings();
 }
 
-// ponytail: ~20-line markdown renderer (headings, bold, code, lists, tables); swap for marked.js if minutes get fancier
+// ponytail: small markdown renderer (headings, bold, italics, code, lists, tables); swap for a library if minutes get richer
 function md(src) {
-  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`(.+?)`/g, "<code>$1</code>");
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
   const out = []; let list = null, table = false;
-  const flush = () => { if (list) { out.push(`</${list}>`); list = null; } if (table) { out.push("</table>"); table = false; } };
-  for (const line of src.split("\n")) {
+  const flush = () => { if (list) { out.push(`</${list}>`); list = null; } if (table) { out.push("</table></div>"); table = false; } };
+  for (const line of String(src).replace(/\r/g, "").split("\n")) {
     let m;
-    if ((m = line.match(/^(#{1,6})\s+(.*)/))) { flush(); const h = Math.min(m[1].length + 1, 6); out.push(`<h${h}>${inline(m[2])}</h${h}>`); }
-    else if (/^\s*\|/.test(line)) {
+    if ((m = line.match(/^(#{1,6})\s+(.*)/))) { flush(); const h = Math.min(m[1].length + 1, 4); out.push(`<h${h}>${inline(m[2])}</h${h}>`); }
+    else if (/^\s*\|.*\|\s*$/.test(line) || (table && /\|/.test(line))) {
       if (/^\s*\|?\s*:?-{2,}/.test(line)) continue;
       const cells = line.trim().replace(/^\||\|$/g, "").split("|");
       const tag = table ? "td" : "th";
-      if (!table) { flush(); table = true; out.push("<table>"); }
+      if (!table) { flush(); table = true; out.push(`<div class="tbl"><table>`); }
       out.push("<tr>" + cells.map(c => `<${tag}>${inline(c.trim())}</${tag}>`).join("") + "</tr>");
     }
-    else if ((m = line.match(/^\s*[-*]\s+(.*)/))) { if (list !== "ul") { flush(); list = "ul"; out.push("<ul>"); } out.push(`<li>${inline(m[1])}</li>`); }
+    else if ((m = line.match(/^\s*[-*+]\s+(.*)/))) { if (list !== "ul") { flush(); list = "ul"; out.push("<ul>"); } out.push(`<li>${inline(m[1])}</li>`); }
     else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { if (list !== "ol") { flush(); list = "ol"; out.push("<ol>"); } out.push(`<li>${inline(m[1])}</li>`); }
     else if (!line.trim()) flush();
     else { flush(); out.push(`<p>${inline(line)}</p>`); }
@@ -382,115 +663,232 @@ function md(src) {
   flush(); return out.join("");
 }
 
+// turn a technical failure into one sentence a person can act on; keep the detail short
+function friendlyLlmError(err) {
+  const e = String(err || "");
+  const why = /out of memory|cudaMalloc|CUDA_Host|alloc/i.test(e) ? "The server's graphics card had no free memory for the minutes writer, usually because another program on the server is using it."
+    : /refused|unreachable|timed out|timeout|Name or service|getaddrinfo|No route/i.test(e) ? "The minutes writer wasn't running or couldn't be reached."
+    : /not found|pull/i.test(e) ? "The chosen model isn't installed on the server."
+    : "The minutes writer returned an error.";
+  return e ? `${why} Details: ${e.length > 160 ? e.slice(0, 160) + "…" : e}` : why;
+}
+
+function friendlyOdoo(reason) {
+  const r = String(reason || "");
+  if (!r || /not configured/i.test(r)) return { lvl: "ok", text: "Odoo isn't set up, so they weren't published." };
+  const why = /auth|denied|password|Access|PermissionError/i.test(r) ? "Odoo refused the sign-in. Check the user and API key in Settings."
+    : /refused|unreachable|timed out|timeout|502|503|504|ProtocolError|getaddrinfo|No route/i.test(r) ? "Odoo couldn't be reached at the time."
+    : /project/i.test(r) ? "The Odoo project wasn't found. Check the project ID in Settings."
+    : "Odoo returned an error.";
+  return { lvl: "warn", text: `Not published to Odoo: ${why} Details: ${r.length > 120 ? r.slice(0, 120) + "…" : r}` };
+}
+
+let minutesText = "";
 async function showDetail() {
   if (!selected) return;
   if (!rows.length) { try { await loadMeetings(); } catch (e) { return; } }
-  const row = rows.find(r => r.meeting_id === selected), m = row && row.minutes;
-  $("#d-title").textContent = selected;
-  $("#d-live").href = `/captions/${selected}`;
-  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  const id = selected, row = rows.find(r => r.meeting_id === id), m = row && row.minutes;
+  $("#d-title").textContent = id;
+  $("#d-live").href = `/captions/${encodeURIComponent(id)}`;
+  $("#d-meta").innerHTML = row ? [
+    row.live ? `<span class="chip ok">${icon("mic")}Live now</span>` : "",
+    row.started ? `<span class="chip">${esc(fmtDate(row.started))}</span>` : "",
+    row.started ? `<span class="chip">${esc(fmtDur(row.started, row.ended))}</span>` : "",
+    ...row.speakers.map(s => `<span class="chip">${esc(s)}</span>`)].join("") : `<span class="chip err">This meeting doesn't exist</span>`;
+  document.querySelectorAll(".tab").forEach(b => { b.classList.toggle("on", b.dataset.tab === tab); b.setAttribute("aria-selected", b.dataset.tab === tab); });
+  const running = (row && row.finalizing) || myFinalize === id;
   const btn = $("#d-finalize");
-  if (!btn.disabled) { btn.textContent = m ? "Write minutes again" : "Write minutes"; btn.className = m ? "" : "primary"; }
+  btn.disabled = !!running || !row || !row.segments;
+  btn.className = "btn has-i " + (m ? "outlined" : "filled");
+  btn.querySelector("span").textContent = running ? "Writing minutes…" : m ? "Write again" : "Write minutes";
+  const st = $("#d-status"); st.replaceChildren();
+  if (running) st.append(banner({ lvl: "info", t: "Writing the minutes", d: "This usually takes one to three minutes. You can leave this page; everyone sees the result here when it's done." }));
+  else if (m && m.status === "file_only") st.append(banner({ lvl: "warn", t: "Minutes from an earlier version", d: "These minutes were saved before the hub recorded how they were made." }));
+  else if (m && !m.llm) st.append(banner({ lvl: "err", t: "These aren't minutes yet, only what was said", d: `${friendlyLlmError(m.llm_error)} Once it's fixed, write the minutes again.`, acts: [["Open settings", go("settings")]] }));
+  else if (m && m.odoo && m.odoo.status === "published") st.append(banner({ lvl: "ok", t: `Published to Odoo as task ${m.odoo.parent_task_id}`,
+      d: `Written ${fmtDate(m.finalized_at)} by ${m.llm_model || "the minutes writer"}. ${(m.odoo.subtasks || []).length} action item(s) assigned to their owners.` }));
+  else if (m) { const o = friendlyOdoo(m.odoo && m.odoo.reason);
+    st.append(banner({ lvl: o.lvl, t: "Minutes saved on the hub", d: `Written ${fmtDate(m.finalized_at)} by ${m.llm_model || "the minutes writer"}. ${o.text}`,
+      acts: o.lvl === "warn" ? [["Open settings", go("settings")], ["Try again", () => $("#d-finalize").click()]] : [] })); }
   const body = $("#d-body");
+  $("#d-copy").hidden = $("#d-download").hidden = !(tab === "minutes" && m);
   if (tab === "minutes") {
-    const r = await fetch(`/api/meetings/${selected}/minutes`);
-    let note = "";
-    if (m && m.status === "file_only") note = `<div class="note warn">A minutes file exists for this meeting, written before the hub kept a record of how.</div>`;
-    else if (m && m.llm) note = `<div class="note">Minutes written ${fmtDate(m.finalized_at)} with ${esc(m.llm_model || "the minutes writer")}. ${m.odoo && m.odoo.status === "published" ? `Published to Odoo as task ${esc(m.odoo.parent_task_id)} with ${(m.odoo.subtasks || []).length} action item(s).` : `Kept on the hub only: ${esc((m.odoo && m.odoo.reason) || "Odoo not set up")}.`}</div>`;
-    else if (m) note = `<div class="note bad"><b>These are not minutes yet.</b> The minutes writer was not available on ${fmtDate(m.finalized_at)}, so this is the plain transcript. Reason: ${esc(m.llm_error || "Ollama unavailable")}. Fix it under Settings, then press “Write minutes again”.</div>`;
-    body.innerHTML = r.ok ? note + `<div class="md">${md(await r.text())}</div>`
-                          : `<div class="empty">No minutes yet. “Write minutes” sends what was said to the minutes writer, saves the result on the hub and publishes it to Odoo when that is set up. It takes one to three minutes.</div>`;
+    if (!m && row && !row.segments) { body.innerHTML = `<div class="empty">${icon("mic")}<b>Nothing was said in this meeting</b>There's nothing to write minutes from yet. Minutes can be written once captions have been recorded.</div>`; return; }
+    if (!m) { body.innerHTML = `<div class="empty">${icon("doc")}<b>No minutes yet</b>Write minutes turns what was said into a summary, decisions and action items, and publishes them to Odoo when it's set up.</div>`; return; }
+    try { const r = await fetch(`/api/meetings/${encodeURIComponent(id)}/minutes`); minutesText = r.ok ? await r.text() : ""; } catch (e) { minutesText = ""; }
+    if (selected !== id || tab !== "minutes") return;
+    body.innerHTML = minutesText ? `<article class="doc">${md(minutesText)}</article>` : `<div class="empty"><b>The minutes file is missing</b>Write the minutes again to recreate it.</div>`;
   } else {
-    const segs = await api(`/api/meetings/${selected}/segments`);
-    body.innerHTML = segs.map(s => `<div class="seg"><div><div class="who">${esc(s.speaker)}</div><div class="t">${new Date(s.ts * 1000).toLocaleTimeString()}</div></div><div>${esc(s.text)}</div></div>`).join("") || `<div class="empty">Nothing was said yet.</div>`;
+    const segs = await api(`/api/meetings/${encodeURIComponent(id)}/segments`).catch(() => []);
+    if (selected !== id || tab !== "transcript") return;
+    const turns = [];  // consecutive sentences by the same person become one turn
+    for (const s of segs) { const last = turns[turns.length - 1]; if (last && last.speaker === s.speaker) last.lines.push(s.text); else turns.push({ speaker: s.speaker, ts: s.ts, lines: [s.text] }); }
+    body.innerHTML = turns.length ? turns.map(t => `<div class="turn">${avatar(t.speaker)}<div><div class="who">${esc(t.speaker)}<time>${esc(fmtTime(t.ts))}</time></div>${t.lines.map(l => `<p>${esc(l)}</p>`).join("")}</div></div>`).join("")
+      : `<div class="empty">${icon("mic")}<b>Nothing was said yet</b>Captions appear here as people speak.</div>`;
   }
 }
 document.querySelectorAll(".tab").forEach(b => b.onclick = () => { tab = b.dataset.tab; showDetail(); });
+$("#d-copy").onclick = async () => { try { await navigator.clipboard.writeText(minutesText); snack("Minutes copied"); } catch (e) { snack("Couldn't copy. Select the text and copy it instead."); } };
+$("#d-download").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([minutesText], { type: "text/markdown" })); a.download = `${selected}-minutes.md`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  snack("Minutes downloaded");
+};
 $("#d-finalize").onclick = async () => {
-  const btn = $("#d-finalize"); btn.disabled = true; btn.textContent = "Writing minutes… this takes a few minutes";
-  try { await api(`/api/meetings/${selected}/finalize`, { method: "POST" }); }
-  catch (e) { $("#d-body").innerHTML = `<div class="note bad">Minutes could not be written: ${esc(e.message)}</div>`; btn.disabled = false; return; }
-  btn.disabled = false; tab = "minutes"; await loadMeetings(); await showDetail();
+  const id = selected, row = rows.find(r => r.meeting_id === id);
+  if (row && row.minutes && !(await confirmDlg("Write the minutes again?",
+      "The new minutes replace the ones saved on the hub. If Odoo is set up, a new task is created and the previous one stays in Odoo.", "Write again"))) return;
+  myFinalize = id; showDetail();
+  try {
+    const r = await api(`/api/meetings/${encodeURIComponent(id)}/finalize`, { method: "POST" });
+    myFinalize = null;
+    const where = r.odoo && r.odoo.status === "published" ? "and published to Odoo" : "and saved on the hub";
+    snack(r.llm ? `Minutes for ${id} written ${where}` : `Only the transcript of ${id} was saved: the minutes writer isn't available`,
+          selected === id ? null : "View", go("meeting/" + encodeURIComponent(id)), 8000);
+  } catch (e) { myFinalize = null; if (!e.auth) snack("Couldn't write the minutes: " + e.message, "Retry", () => $("#d-finalize").click(), 10000); }
+  await loadMeetings().catch(() => {}); if (selected === id) { tab = "minutes"; showDetail(); }
 };
 
-// ---- settings
+// ---------- settings ----------
 function formValues() {
   const v = Object.fromEntries(new FormData($("#form")).entries());
   v.odoo_project_id = v.odoo_project_id === "" ? null : Number(v.odoo_project_id);
-  for (const k of ["dedup_hold_s", "dedup_window_s", "dedup_similarity"]) v[k] = Number(v[k]);
-  try { v.speaker_aliases = v.speaker_aliases.trim() ? JSON.parse(v.speaker_aliases) : {}; }
-  catch (e) { throw new Error("the name mapping must be valid JSON, for example {\"Gina\": \"Gian Domenico Bianchi\"}"); }
-  return v;  // odoo_api_key "" = unchanged
+  for (const k of ["dedup_hold_s", "dedup_window_s", "dedup_similarity", "noise_floor_rms"]) v[k] = Number(v[k]);
+  if (v.default_meeting && !/^[A-Za-z0-9_-]{1,64}$/.test(v.default_meeting)) throw new Error("The meeting name can only use letters, digits, - and _");
+  const aliases = {};
+  for (const line of v.speaker_aliases.split("\n")) {
+    if (!line.trim()) continue;
+    const m = line.match(/^\s*(.+?)\s*=\s*(.+?)\s*$/);
+    if (!m) throw new Error(`“${line.trim()}” needs an equals sign: caption name = Odoo name`);
+    aliases[m[1]] = m[2];
+  }
+  v.speaker_aliases = aliases;
+  return v;  // odoo_api_key "" = keep the saved one
+}
+const LABELS = { transcriber: "mode", whisperlive_url: "recognition address", whisper_model: "speech model", ollama_url: "Ollama address",
+  ollama_model: "minutes model", odoo_url: "Odoo address", odoo_db: "Odoo database", odoo_user: "Odoo user", odoo_api_key: "Odoo API key",
+  odoo_project_id: "Odoo project", speaker_aliases: "names in Odoo", dedup_hold_s: "wait before showing", dedup_window_s: "same sentence within",
+  dedup_similarity: "how similar", noise_floor_rms: "background noise level", default_meeting: "meeting name", default_language: "language" };
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+function setField(k, v) {
+  const el = $("#form").elements[k]; if (!el) return;
+  if (k === "odoo_api_key") { el.value = ""; $("#key-help").textContent = v ? "Saved. Leave empty to keep it, or type a new one." : "Odoo, Preferences, Account security, New API key"; }
+  else if (k === "speaker_aliases") el.value = Object.entries(v).map(([a, b]) => `${a} = ${b}`).join("\n");
+  else el.value = v === null ? "" : v;
 }
 function fill() {
   if (!current) return;
-  const f = $("#form");
-  for (const [k, v] of Object.entries(current.values)) {
-    const el = f.elements[k];
-    if (!el) continue;
-    if (k === "odoo_api_key") { el.value = ""; el.placeholder = v ? "saved, leave empty to keep it" : "not set"; }
-    else if (k === "speaker_aliases") el.value = Object.keys(v).length ? JSON.stringify(v, null, 1) : "";
-    else el.value = v === null ? "" : v;
-  }
-  dirty = false;
+  for (const [k, v] of Object.entries(current.values)) setField(k, v);
+  loaded = structuredClone(current.values);
+  setDirty(false);
 }
-$("#form").addEventListener("input", () => { dirty = true; say("#msg-save", "You have unsaved changes."); });
-function stateText(id, ok, text) { $(id).innerHTML = dotHtml(ok === null ? "" : ok ? "ok" : "bad") + esc(text); }
+function myChanges() {  // only what this person edited, so two admins editing different cards never overwrite each other
+  const v = formValues(), out = {};
+  for (const k of Object.keys(loaded)) {
+    if (k === "odoo_api_key") { if (v[k]) out[k] = v[k]; continue; }
+    if (!same(v[k], loaded[k])) out[k] = v[k];
+  }
+  return out;
+}
+function setDirty(d) { dirty = d; $("#savebar").classList.toggle("on", d); }
+function discard() { conflict = false; $("#settings-banner").replaceChildren(); fill(); }
+$("#form").addEventListener("input", () => setDirty(true));
+$("#form").addEventListener("change", () => setDirty(true));
+function chip(lvl, text) { return `<span class="chip ${lvl}">${icon(lvl === "ok" ? "ok" : lvl === "err" ? "err" : "warn")}${esc(text)}</span>`; }
 async function loadSettings() {
+  const prev = current && current.version;
   current = await api("/api/settings");
   const s = current.status, v = current.values;
-  stateText("#st-tr", v.transcriber === "mock" ? null : s.transcriber_reachable, v.transcriber === "mock" ? "test mode" : s.transcriber_reachable ? "ready" : "not answering");
-  stateText("#st-llm", s.llm_reachable && s.llm_model_pulled, s.llm_reachable ? (s.llm_model_pulled ? "ready" : "model not installed") : "not reachable");
-  stateText("#st-odoo", s.odoo_configured ? s.odoo_reachable : null, s.odoo_configured ? (s.odoo_reachable ? "ready" : "not answering") : "not set up");
+  $("#st-tr").innerHTML = v.transcriber === "mock" ? chip("warn", "Test mode") : s.transcriber_reachable ? chip("ok", "Ready") : chip("err", "Not answering");
+  $("#st-llm").innerHTML = !s.llm_reachable ? chip("err", "Not reachable") : s.llm_model_pulled ? chip("ok", "Ready") : chip("warn", "Model not installed");
+  $("#st-odoo").innerHTML = !s.odoo_configured ? `<span class="chip">Not set up</span>` : s.odoo_reachable ? chip("ok", "Ready") : chip("err", "Not answering");
+  $("#st-agent").innerHTML = s.agent ? chip("ok", `Ready, ${(s.agent.size / 1048576).toFixed(0)} MB`) : chip("warn", "Not uploaded yet");
+  $("#dl-exe").style.opacity = s.agent ? 1 : .38;
   $("#ollama-models").innerHTML = s.llm_models.map(m => `<option value="${esc(m)}">`).join("");
-  $("#llm-hint").textContent = s.llm_models.length ? "Installed on this Ollama: " + s.llm_models.join(", ") : "Ollama is not answering, so no model list is available.";
-  $("#agent-info").textContent = s.agent ? `Current build: ${(s.agent.size / 1048576).toFixed(1)} MB, uploaded ${fmtDate(s.agent.modified)}.` : "No build uploaded yet. The download links will not work until a maintainer uploads one (below).";
-  $("#dl-exe").style.opacity = s.agent ? 1 : .5;
+  $("#llm-hint").textContent = s.llm_models.length ? `Installed: ${s.llm_models.slice(0, 6).join(", ")}${s.llm_models.length > 6 ? " and " + (s.llm_models.length - 6) + " more" : ""}` : "No model list: Ollama isn't answering";
+  if (dirty && prev !== undefined && prev !== current.version && !conflict) {
+    let mine = {}; try { mine = myChanges(); } catch (e) {}
+    const theirs = Object.keys(loaded).filter(k => !same(current.values[k], loaded[k]));
+    const clash = theirs.filter(k => k in mine);
+    for (const k of theirs.filter(k => !(k in mine))) { setField(k, current.values[k]); loaded[k] = structuredClone(current.values[k]); }
+    if (clash.length) {
+      conflict = true;
+      $("#settings-banner").replaceChildren(banner({ lvl: "warn", t: "Someone else changed the same settings",
+        d: `You both changed: ${clash.map(k => LABELS[k] || k).join(", ")}. Keep your values or load theirs. Their other changes are already in the form.`,
+        acts: [["Keep mine", () => { conflict = "keep"; $("#settings-banner").replaceChildren(); }], ["Load theirs", () => { discard(); snack("Loaded the latest settings"); }]] }));
+    } else if (theirs.length) snack(`Someone else changed ${theirs.map(k => LABELS[k] || k).join(", ")}. Their change is in the form; yours are kept.`, null, null, 8000);
+  }
   if (!dirty) fill();
   renderOverview();
 }
 async function saveSettings() {
+  let body;
+  try { body = myChanges(); } catch (e) { snack(e.message, null, null, 8000); return; }
+  if (conflict === true) { snack("Someone else changed the same settings. Choose Keep mine or Load theirs first.", null, null, 8000); return; }
+  if (!Object.keys(body).length) { setDirty(false); snack("Nothing changed"); return; }
+  if (conflict !== "keep") body._version = current.version;  // "keep" overwrites their value on purpose
   const btn = $("#btn-save"); btn.disabled = true;
   try {
-    const r = await api("/api/settings", { method: "PUT", body: JSON.stringify(formValues()) });
-    dirty = false; await loadSettings();
-    say("#msg-save", (r.changed.length ? "Saved." : "Nothing changed.") + (r.notes.length ? " " + r.notes.join(" ") : ""), true);
-  } catch (e) { say("#msg-save", "Not saved: " + e.message, false); }
+    const r = await api("/api/settings", { method: "PUT", body: JSON.stringify(body) });
+    conflict = false; $("#settings-banner").replaceChildren(); setDirty(false); await loadSettings();
+    snack(r.changed.length ? "Settings saved. Everyone uses them from now on." : "Nothing changed");
+    for (const n of r.notes) snack(n, null, null, 8000);
+  } catch (e) {
+    if (e.status === 409) { await loadSettings().catch(() => {}); if (!conflict) { btn.disabled = false; return saveSettings(); } }  // merged their edit, retry
+    else if (!e.auth) snack("Settings not saved: " + e.message, null, null, 8000);
+  }
   btn.disabled = false;
 }
+function result(id, ok, text) { const el = $("#msg-" + id); el.className = "result " + (ok === null ? "" : ok ? "ok" : "err"); el.innerHTML = (ok === null ? "" : icon(ok ? "ok" : "err", "i s")) + esc(text); }
 async function checkConn(what) {
-  say("#msg-" + what, "Checking…");
-  try { const r = await api("/api/settings/test", { method: "POST", body: JSON.stringify({ what, ...formValues() }) }); say("#msg-" + what, r.message, r.ok); }
-  catch (e) { say("#msg-" + what, e.message, false); }
+  let v; try { v = formValues(); } catch (e) { result(what, false, e.message); return; }
+  result(what, null, "Checking…");
+  try { const r = await api("/api/settings/test", { method: "POST", body: JSON.stringify({ what, ...v }) }); result(what, r.ok, r.message); }
+  catch (e) { if (!e.auth) result(what, false, e.message); }
 }
 async function restartWL() {
-  say("#msg-whisperlive", "Restarting…");
-  try { say("#msg-whisperlive", (await api("/api/whisperlive/restart", { method: "POST" })).message, true); }
-  catch (e) { say("#msg-whisperlive", e.message, false); }
+  if (!(await confirmDlg("Restart speech recognition?", "Live captions stop for about a minute for everyone in a meeting, then come back by themselves.", "Restart"))) return;
+  try { snack((await api("/api/whisperlive/restart", { method: "POST" })).message, null, null, 8000); } catch (e) { if (!e.auth) snack("Couldn't restart: " + e.message); }
 }
 async function upload() {
   const f = $("#exe").files[0];
-  if (!f) return say("#msg-upload", "Choose the OfficeMeetingAgent.exe file first.", false);
-  say("#msg-upload", `Uploading ${(f.size / 1048576).toFixed(1)} MB…`);
+  if (!f) { snack("Choose the OfficeMeetingAgent.exe file first"); return; }
+  if (!/\.exe$/i.test(f.name)) { snack("That isn't an .exe file"); return; }
+  setBusy(1);
   try {
     const r = await fetch("/api/agent/exe", { method: "PUT", body: f, headers: auth() });
-    if (!r.ok) throw new Error((await r.json()).detail || r.status);
-    say("#msg-upload", "Uploaded. Every PC now downloads this build.", true); await loadSettings();
-  } catch (e) { say("#msg-upload", "Upload failed: " + e.message, false); }
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
+    snack("Agent uploaded. New computers now download this version."); $("#exe").value = ""; await loadSettings();
+  } catch (e) { snack("Upload failed: " + e.message, null, null, 8000); }
+  finally { setBusy(-1); }
 }
+$("#dl-exe").onclick = e => { if (current && !current.status.agent) { e.preventDefault(); snack("No agent uploaded yet", "Upload", () => { $("#upload-box").open = true; }); } };
 
-// ---- boot
+// ---------- refresh loop: slows down on errors and pauses in background tabs ----------
+let failures = 0;
 async function refresh() {
+  if (!token) return;
   try {
     const h = await api("/health");
-    $("#health").textContent = `${h.rooms ? h.rooms + " meeting(s) live" : "no meeting live"}, checked ${new Date().toLocaleTimeString([], { timeStyle: "short" })}`;
+    $("#conn-banner").hidden = true; failures = 0;
+    $("#health").textContent = h.rooms ? `${h.rooms} live ${h.rooms === 1 ? "meeting" : "meetings"}, ${h.speakers} speaking, ${h.listeners} watching` : "No meeting live";
     await Promise.all([loadSettings(), loadMeetings()]);
     if (selected) showDetail();
-  } catch (e) { if (!/login/.test(e.message)) $("#health").textContent = "Hub not reachable: " + e.message; }
+  } catch (e) {
+    if (e.auth) return;
+    failures++;
+    $("#conn-banner").hidden = false;
+    $("#conn-detail").textContent = `Retrying automatically. ${e.message.charAt(0).toUpperCase() + e.message.slice(1)}.`;
+  }
 }
+const period = () => (rows.some(r => r.finalizing) || myFinalize ? 5000 : 20000) * Math.min(4, 1 + failures);
+(function loop() { setTimeout(() => { if (document.visibilityState === "visible") refresh(); loop(); }, period()); })();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
 route();
-if (token) refresh(); else login();
-setInterval(() => { if (token) refresh(); }, 20000);
+if (token) refresh(); else signin();
 </script>
 </body>
 </html>

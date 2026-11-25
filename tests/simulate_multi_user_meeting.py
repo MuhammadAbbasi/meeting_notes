@@ -76,12 +76,17 @@ async def speaker(hub: str, meeting: str, name: str, pcm: np.ndarray, log: list)
             pass
 
 
-async def listener(hub: str, meeting: str, captions: list, stop: asyncio.Event) -> None:
+async def listener(hub: str, meeting: str, captions: list, stop: asyncio.Event, quiet: bool = False,
+                   latencies: list | None = None) -> None:
     async with connect(f"{hub}/listen/{meeting}", max_size=None) as ws:
         while not stop.is_set():
             try:
                 msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=0.5))
             except asyncio.TimeoutError:
+                continue
+            if quiet:  # extra screens only measure how late completed captions arrive
+                if msg["type"] == "caption" and msg["completed"] and latencies is not None:
+                    latencies.append(time.time() - (msg["ts"] + msg["end"] - msg["start"]))  # ts marks the sentence start
                 continue
             if msg["type"] == "caption":
                 captions.append(msg)
@@ -101,6 +106,8 @@ async def main(a: argparse.Namespace) -> int:
     captions: list = []
     stop = asyncio.Event()
     lst = asyncio.create_task(listener(a.hub, a.meeting, captions, stop))
+    latencies: list = []
+    extra = [asyncio.create_task(listener(a.hub, a.meeting, [], stop, quiet=True, latencies=latencies)) for _ in range(a.listeners)]
     await asyncio.sleep(0.3)
     own: dict[str, list] = {n: [] for n in names}
     quiet = {q.strip() for q in a.quiet.split(",") if q.strip()}
@@ -115,6 +122,7 @@ async def main(a: argparse.Namespace) -> int:
     await asyncio.sleep(a.settle)  # > hub DEDUP_HOLD_S so held captions are decided
     stop.set()
     await lst
+    await asyncio.gather(*extra)
 
     http = a.hub.replace("ws://", "http://").replace("wss://", "https://")
     with urllib.request.urlopen(f"{http}/api/meetings/{a.meeting}/segments", timeout=5) as r:
@@ -127,7 +135,16 @@ async def main(a: argparse.Namespace) -> int:
         print(f"{n}: {len(got)} completed captions at listener")
         ok &= bool(got) or n in suppressed
     print(f"persisted={len(persisted)} listener_completed={len(done)}")
+    if a.listeners:
+        expect = len(done) * a.listeners
+        lat = sorted(latencies)
+        p = lambda q: lat[min(len(lat) - 1, int(q * len(lat)))] if lat else float("nan")  # noqa: E731
+        print(f"extra screens={a.listeners}: received {len(lat)}/{expect} completed captions, "
+              f"delay after sentence end p50={p(.5):.2f}s p95={p(.95):.2f}s max={p(1):.2f}s")
+        ok_screens = len(lat) == expect
     ok &= len(persisted) == len(done)
+    if a.listeners:
+        ok &= ok_screens
     retracted = [c for c in captions if c["type"] == "retract"]
     if retracted:
         print(f"retracted (bleed suppressed): {sorted({r['speaker'] for r in retracted})} x{len(retracted)}")
@@ -159,4 +176,5 @@ if __name__ == "__main__":
     p.add_argument("--expect-suppressed", default="", help="speakers that must have 0 persisted captions")
     p.add_argument("--settle", type=float, default=3.5, help="seconds to wait after the last audio (> DEDUP_HOLD_S)")
     p.add_argument("--finalize", action="store_true", help="call /finalize at the end and print the minutes head")
+    p.add_argument("--listeners", type=int, default=0, help="extra caption screens that must all receive every caption")
     sys.exit(asyncio.run(main(p.parse_args())))

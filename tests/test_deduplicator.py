@@ -77,3 +77,14 @@ def test_prune_forgets_old_frames():
     f.add(frame("A", text, 1000.0, 0.08))
     f.prune(now=1000.0 + 25)
     assert f.should_emit(frame("B", text, 1000.5, 0.01)) is True
+
+
+def test_room_noise_filter_matches_measured_behaviour():
+    from server.deduplicator import is_room_noise
+    assert is_room_noise("Thank you.", 0.0005, 0.005)           # silence
+    assert is_room_noise("감사합니다.", 0.012, 0.005)            # stock phantom, quiet
+    assert is_room_noise("Oh okay", 0.015, 0.005)                 # 2 words, quiet
+    assert not is_room_noise("Thank you.", 0.07, 0.005)           # said out loud: kept
+    assert not is_room_noise("ok", 0.05, 0.005)                   # short but at speech volume: kept
+    assert not is_room_noise("il tracker ha perso la comunicazione", 0.012, 0.005)  # real sentence, quiet mic
+    assert not is_room_noise("Thank you.", 0.0, 0)                # filter off

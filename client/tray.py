@@ -28,7 +28,7 @@ class Tray:
             pystray.MenuItem(lambda i: "Resume" if a.paused else "Pause (send silence)",
                              lambda: a.set_paused(not a.paused), enabled=lambda i: a.running),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Finalize & push to Odoo", lambda: a.finalize()),
+            pystray.MenuItem("Write minutes", lambda: a.finalize()),
             pystray.MenuItem("Change meeting…", lambda: a.change_meeting()),
             pystray.MenuItem(lambda i: f"Meeting: {a.cfg['meeting_id']} · {a.cfg['user_name']}", None, enabled=False),
             pystray.MenuItem("Quit", lambda: a.quit()),
