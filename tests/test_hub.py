@@ -486,3 +486,18 @@ def test_final_sentence_not_repeated(monkeypatch, tmp_path):
             next_of(ws, "caption", completed=True, text="ok")
         texts = [r["text"] for r in c.get("/api/meetings/daily/segments").json()]
         assert texts == ["the manual cleaning crews were working near live strings", "ok", "ok"]
+
+
+def test_install_script_pins_the_uploaded_build(client):
+    import hashlib
+    r = client.get("/install.ps1")
+    assert r.status_code == 200 and "not been uploaded" in r.text and "$expected = ''" in r.text
+    blob = b"MZ" + bytes(range(256)) * 300
+    client.put("/api/agent/exe", auth=AUTH, content=blob)
+    script = client.get("/install.ps1").text
+    sha = hashlib.sha256(blob).hexdigest().upper()
+    assert f"$expected = '{sha}'" in script and "$base = 'http://testserver'" in script
+    assert "Get-FileHash" in script and "Startup" in script and "LOCALAPPDATA" in script
+    assert client.get("/api/settings", auth=AUTH).json()["status"]["agent"]["sha256"] == sha
+    assert "removed" in client.get("/uninstall.ps1").text
+    assert client.get("/icon.png").headers["content-type"] == "image/png"

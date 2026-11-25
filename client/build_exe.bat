@@ -7,9 +7,10 @@ if not defined PY set PY=py -3.12
 
 %PY% -m pip install --upgrade pip pyinstaller -r requirements.txt pyaudiowpatch || exit /b 1
 %PY% -m PyInstaller --noconfirm --onefile --windowed --name OfficeMeetingAgent ^
-  --add-data "config.example.json;." ^
+  --add-data "config.example.json;." --add-data "assets;assets" ^
+  --icon assets\icon.ico --version-file version_info.txt ^
   --hidden-import pystray._win32 --collect-all sounddevice ^
   office_agent.py || exit /b 1
 
 echo.
-echo Built dist\OfficeMeetingAgent.exe  (copy it to colleagues; first start opens the setup form)
+echo Built dist\OfficeMeetingAgent.exe  (upload it in the dashboard: Install, Other options, Publish a new version)

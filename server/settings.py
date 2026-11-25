@@ -29,7 +29,7 @@ FIELDS: dict[str, tuple[str, Any, Any]] = {
     "noise_floor_rms": ("NOISE_FLOOR_RMS", 0.005, float),
     "partial_commit_s": ("PARTIAL_COMMIT_S", 3.0, float),
     "default_meeting": ("DEFAULT_MEETING", "daily", str),
-    "default_language": ("DEFAULT_LANGUAGE", "auto", str),
+    "default_language": ("DEFAULT_LANGUAGE", "it", str),
 }
 SECRETS = {k for k, (_, _, t) in FIELDS.items() if t == "secret"}
 

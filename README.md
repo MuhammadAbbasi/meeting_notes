@@ -118,24 +118,27 @@ first-run default that the dashboard overrides (`data/settings.json`).
 
 ## 2. Workstation agent
 
-### Option A: the `.exe` (for colleagues)
+### Option A: install with one command (for colleagues)
 
-On any Windows PC with Python 3.11 or 3.12, build once:
+On the new computer press the Windows key, type *PowerShell*, open it and paste:
 
 ```powershell
-cd client
-build_exe.bat          # -> client\dist\OfficeMeetingAgent.exe   (uses `py -3.12`, then `py -3.11`)
-# other interpreter, e.g. a uv/Astral install:  set PY=py -V:Astral\CPython3.12.13 && build_exe.bat
+powershell -ExecutionPolicy Bypass -NoProfile -Command "irm http://192.168.10.17:8085/install.ps1 | iex"
 ```
 
-Or upload from the command line instead of the dashboard form:
-`curl -u admin:<ADMIN_PASSWORD> -T client\dist\OfficeMeetingAgent.exe http://<hub-ip>:8085/api/agent/exe`
+It installs for the current Windows user (no administrator rights) into `%LOCALAPPDATA%\MeetingCaptions`,
+checks the file's SHA-256 fingerprint against the hub's copy and refuses a mismatch, writes the settings with
+this hub's address, adds Start menu and start-with-Windows shortcuts and opens the setup window (name, meeting,
+language, calls checkbox, each explained). Downloads made by PowerShell carry no browser download mark, so
+Windows SmartScreen does not show "Windows protected your PC". The dashboard's *Install the agent* page has the
+command with a copy button, the download alternative, the fingerprint and the remove command
+(`.../uninstall.ps1`).
 
-Upload `client\dist\OfficeMeetingAgent.exe` once in the dashboard (*Workstation agent* card).
-On each new PC open `http://<hub-ip>:8085/dashboard`, download the `.exe` and the pre-filled
-`config.json` into one folder and run the `.exe`: the setup form already has the hub IP, meeting
-id and language, so the person only types their name (as shown in captions). Settings are saved
-next to the `.exe` in `config.json`.
+Publishing a new version (maintainers): on a Windows PC with Python 3.11/3.12 run `client\build_exe.bat`
+(`client\make_icon.py` redraws the icon), then upload `client\dist\OfficeMeetingAgent.exe` in the dashboard under
+*Install the agent, Other options, Publish a new version*. Computers get it the next time the install command runs.
+Without a paid code-signing certificate a browser-downloaded exe still triggers SmartScreen; the install command
+avoids it.
 
 ### Option B: from source
 

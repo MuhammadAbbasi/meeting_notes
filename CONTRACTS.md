@@ -87,6 +87,9 @@ sends nothing.
   - `POST /api/whisperlive/restart` → `{"message":str}`.
   - `PUT /api/agent/exe` raw body = the exe → `{"agent":{...}}` (stored in `DIST_DIR`).
 - `GET /download/OfficeMeetingAgent.exe` → the uploaded agent (404 before the first upload).
+- `GET /install.ps1` → `text/plain` PowerShell installer bound to this hub's address and the SHA-256 of
+  the uploaded build (`irm http://HUB:8085/install.ps1 | iex`); `GET /uninstall.ps1` removes it again;
+  `GET /icon.png` is the app logo. `status.agent` in `/api/settings` includes `sha256`.
 - `GET /download/config.json` → agent config pre-filled with this hub's host/port and the
   `default_meeting` / `default_language`, `user_name` empty (the agent asks for it on first run).
 - `GET /api/meetings` → list, newest first, of

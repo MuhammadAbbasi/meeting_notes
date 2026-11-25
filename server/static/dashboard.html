@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meeting captions</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230b57d0' d='M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z'/%3E%3C/svg%3E">
+<title>Meeting Captions</title>
+<link rel="icon" href="/icon.png"><link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230b57d0' d='M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z'/%3E%3C/svg%3E">
 <style>
 /* Material 3, Google flavour. Fonts are the user's own (no requests leave the LAN). */
 :root {
@@ -197,6 +197,19 @@ h2.section { font-size: 16px; line-height: 24px; font-weight: 500; margin: 32px 
   display: flex; align-items: center; justify-content: center; font-weight: 500; }
 .steps b { font-weight: 500; font-size: 16px; line-height: 24px; }
 .steps span { color: var(--on-var); grid-column: 2; }
+.install-hero { display: flex; gap: 20px; align-items: center; margin: 8px 0 24px; flex-wrap: wrap; }
+.install-hero img { border-radius: 16px; }
+.install-hero > div { flex: 1; min-width: 240px; }
+.install-hero p { margin: 4px 0 0; color: var(--on-var); max-width: 60ch; }
+.cmd { display: flex; align-items: center; gap: 4px; margin-top: 8px; padding: 4px 4px 4px 14px; border-radius: 8px; background: var(--container); max-width: 100%; }
+.cmd code { background: none; padding: 0; flex: 1; font-size: 13px; overflow-x: auto; white-space: nowrap; }
+.preview { display: grid; grid-template-columns: minmax(260px, 1.2fr) 1fr; gap: 20px; align-items: start; }
+.preview svg { width: 100%; height: auto; }
+.legend { list-style: none; margin: 0; padding: 0; }
+.legend li { margin-bottom: 12px; } .legend b { display: block; font-weight: 500; } .legend span { color: var(--on-var); }
+.dot-s { display: inline-block; width: 9px; height: 9px; border-radius: 5px; vertical-align: middle; margin: 0 2px; }
+details { border-top: 1px solid var(--outline-var); padding: 4px 0; } details:first-of-type { border-top: 0; }
+@media (max-width: 840px) { .preview { grid-template-columns: 1fr; } }
 details > summary { cursor: pointer; color: var(--primary); font-weight: 500; display: inline-flex; align-items: center; gap: 4px; height: 40px; }
 
 /* ---- snackbar, dialog, sign-in ---- */
@@ -265,7 +278,7 @@ dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2
 <!-- Sign in -->
 <div id="signin">
   <form id="signin-form">
-    <svg class="i logo"><use href="#i-forum"/></svg>
+    <img src="/icon.png" alt="" width="48" height="48" style="border-radius:12px">
     <h1>Sign in</h1>
     <p>to the meeting captions hub</p>
     <div class="tf" id="pw-field">
@@ -279,7 +292,7 @@ dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2
 </div>
 
 <div class="topbar">
-  <div class="brand"><svg class="i"><use href="#i-forum"/></svg>Meeting captions</div>
+  <div class="brand"><img src="/icon.png" alt="" width="32" height="32" style="border-radius:8px">Meeting Captions</div>
   <div class="grow"></div>
   <span class="live" id="health" role="status"></span>
   <button class="icon-btn" id="logout" title="Sign out" aria-label="Sign out"><svg class="i"><use href="#i-logout"/></svg></button>
@@ -429,24 +442,71 @@ dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2
 
     <!-- Install -->
     <section class="view" id="view-install">
-      <header><h1 class="headline grow">Install the agent</h1></header>
+      <div class="install-hero">
+        <img src="/icon.png" alt="" width="72" height="72">
+        <div><h1 class="headline">Install Meeting Captions</h1>
+          <p>Live captions of everyone in the meeting, on every computer, and minutes written for you at the end.</p></div>
+        <span id="st-agent"></span>
+      </div>
+
       <div class="card">
-        <div class="head"><h2 class="title-m grow">On a new computer</h2><span id="st-agent"></span></div>
-        <p>The agent sends the microphone to this hub and shows everyone's captions. About a minute per computer.</p>
-        <div class="row" style="margin-top:0">
-          <a class="btn filled has-i" id="dl-exe" href="/download/OfficeMeetingAgent.exe"><svg class="i s"><use href="#i-download"/></svg>Download the agent</a>
-          <a class="btn tonal has-i" href="/download/config.json" download="config.json"><svg class="i s"><use href="#i-download"/></svg>Download settings file</a>
-        </div>
+        <div class="head"><h2 class="title-m grow">Install on a new computer</h2><span class="chip ok">Recommended</span></div>
+        <p>One command installs it for the current Windows user, without administrator rights and without the
+          “Windows protected your PC” warning. It checks the file's fingerprint before installing, so a damaged or
+          altered download is refused.</p>
         <ol class="steps">
-          <li><b>Put both files in one folder</b><span>For example C:\MeetingAgent. The settings file already points to this hub.</span></li>
-          <li><b>Open OfficeMeetingAgent.exe</b><span>If Windows says the publisher is unknown, choose More info, then Run anyway. Type your name as it should appear in captions.</span></li>
-          <li><b>Join meetings from the tray icon</b><span>Captions appear in a small strip at the bottom right. Pause, change meeting or write the minutes from the tray icon.</span></li>
+          <li><b>Open PowerShell</b><span>Press the Windows key, type <i>PowerShell</i> and press Enter.</span></li>
+          <li><b>Paste this command and press Enter</b>
+            <span><span class="cmd"><code id="install-cmd"></code><button class="icon-btn" id="copy-install" title="Copy the command" aria-label="Copy the command"><svg class="i"><use href="#i-copy"/></svg></button></span></span></li>
+          <li><b>Type your name and choose your language</b><span>The setup window opens by itself. After that, Meeting Captions is in the Start menu and starts with Windows.</span></li>
         </ol>
       </div>
+
       <div class="card">
-        <div class="head"><h2 class="title-m grow">Update the agent for everyone</h2></div>
-        <p>Only after the agent's code changes. Build it on a Windows computer with <code>client\build_exe.bat</code>, then upload it here.</p>
-        <details id="upload-box"><summary>Upload a new version</summary>
+        <div class="head"><h2 class="title-m grow">What people see</h2></div>
+        <div class="preview">
+          <svg viewBox="0 0 560 230" role="img" aria-label="A caption strip at the bottom right of the screen and the tray icon">
+            <rect x="0" y="0" width="560" height="230" rx="12" fill="var(--surface-2)"/>
+            <rect x="16" y="16" width="528" height="168" rx="8" fill="var(--container)"/>
+            <rect x="32" y="34" width="210" height="10" rx="5" fill="var(--outline-var)"/><rect x="32" y="54" width="300" height="10" rx="5" fill="var(--outline-var)"/>
+            <rect x="32" y="74" width="250" height="10" rx="5" fill="var(--outline-var)"/>
+            <g transform="translate(250 96)">
+              <rect width="280" height="78" rx="8" fill="#1E1F20" opacity=".9"/>
+              <text x="12" y="17" font-size="9" fill="#C4C7C5" font-family="Segoe UI, sans-serif">Live · daily</text>
+              <text x="192" y="17" font-size="9" fill="#A8C7FA" font-weight="bold" font-family="Segoe UI, sans-serif">Write minutes  Pause  Hide</text>
+              <text x="12" y="38" font-size="11" fill="#A8C7FA" font-weight="bold" font-family="Segoe UI, sans-serif">[Gabriele]</text>
+              <text x="74" y="38" font-size="11" fill="#E3E3E3" font-family="Segoe UI, sans-serif">Il calo è un evento di rete.</text>
+              <text x="12" y="58" font-size="11" fill="#6DD58C" font-weight="bold" font-family="Segoe UI, sans-serif">[Luca]</text>
+              <text x="52" y="58" font-size="11" fill="#C4C7C5" font-style="italic" font-family="Segoe UI, sans-serif">Agreed, safety briefing first…</text>
+            </g>
+            <rect x="16" y="196" width="528" height="22" rx="4" fill="var(--container-high)"/>
+            <image href="/icon.png" x="486" y="198" width="18" height="18"/><circle cx="502" cy="214" r="4" fill="#1E8E3E" stroke="white" stroke-width="1.5"/>
+            <text x="406" y="211" font-size="9" fill="var(--on-var)" font-family="Segoe UI, sans-serif">tray icon</text>
+          </svg>
+          <ul class="legend">
+            <li><b>Caption strip</b><span>Bottom right, half transparent, drag it anywhere. Finished sentences in white, sentences in progress in grey italics.</span></li>
+            <li><b>Tray icon</b><span>The logo with a dot: <span class="dot-s" style="background:#1E8E3E"></span> live, <span class="dot-s" style="background:#F9AB00"></span> paused, <span class="dot-s" style="background:#D93025"></span> reconnecting, <span class="dot-s" style="background:#80868B"></span> stopped. Right-click it to pause, change meeting or write the minutes.</span></li>
+            <li><b>Browser</b><span>Anyone without the agent can follow live captions at <code id="viewer-url"></code>.</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="head"><h2 class="title-m grow">Other options</h2></div>
+        <details><summary>Download the program instead</summary>
+          <p class="muted" style="margin:8px 0 12px">Browsers mark downloaded programs, and because this one isn't signed with a paid
+            code-signing certificate Windows shows “Windows protected your PC”. Choose <i>More info</i>, then <i>Run anyway</i>.
+            To check the file, compare its fingerprint with <code>Get-FileHash OfficeMeetingAgent.exe</code> in PowerShell.</p>
+          <div class="row" style="margin-top:0"><a class="btn tonal has-i" id="dl-exe" href="/download/OfficeMeetingAgent.exe"><svg class="i s"><use href="#i-download"/></svg>Download OfficeMeetingAgent.exe</a></div>
+          <p class="muted" style="margin:12px 0 0">SHA-256 fingerprint: <code id="agent-sha" style="word-break:break-all"></code></p>
+        </details>
+        <details><summary>Remove it from a computer</summary>
+          <p class="muted" style="margin:8px 0 8px">In PowerShell on that computer:</p>
+          <span class="cmd"><code id="uninstall-cmd"></code><button class="icon-btn" id="copy-uninstall" title="Copy the command" aria-label="Copy the command"><svg class="i"><use href="#i-copy"/></svg></button></span>
+        </details>
+        <details id="upload-box"><summary>Publish a new version (maintainers)</summary>
+          <p class="muted" style="margin:8px 0 0">Only after the agent's code changes: build it on a Windows computer with <code>client\build_exe.bat</code>,
+            then upload it. Computers get it the next time someone runs the install command.</p>
           <div class="row"><input type="file" id="exe" accept=".exe"><button type="button" class="btn tonal" onclick="upload()">Upload</button></div>
         </details>
       </div>
@@ -806,8 +866,9 @@ async function loadSettings() {
   $("#st-tr").innerHTML = v.transcriber === "mock" ? chip("warn", "Test mode") : s.transcriber_reachable ? chip("ok", "Ready") : chip("err", "Not answering");
   $("#st-llm").innerHTML = !s.llm_reachable ? chip("err", "Not reachable") : s.llm_model_pulled ? chip("ok", "Ready") : chip("warn", "Model not installed");
   $("#st-odoo").innerHTML = !s.odoo_configured ? `<span class="chip">Not set up</span>` : s.odoo_reachable ? chip("ok", "Ready") : chip("err", "Not answering");
-  $("#st-agent").innerHTML = s.agent ? chip("ok", `Ready, ${(s.agent.size / 1048576).toFixed(0)} MB`) : chip("warn", "Not uploaded yet");
+  $("#st-agent").innerHTML = s.agent ? chip("ok", `Version of ${new Date(s.agent.modified * 1000).toLocaleDateString()}, ${(s.agent.size / 1048576).toFixed(0)} MB`) : chip("warn", "Not uploaded yet");
   $("#dl-exe").style.opacity = s.agent ? 1 : .38;
+  $("#agent-sha").textContent = s.agent ? s.agent.sha256 : "no version uploaded yet";
   $("#ollama-models").innerHTML = s.llm_models.map(m => `<option value="${esc(m)}">`).join("");
   $("#llm-hint").textContent = s.llm_models.length ? `Installed: ${s.llm_models.slice(0, 6).join(", ")}${s.llm_models.length > 6 ? " and " + (s.llm_models.length - 6) + " more" : ""}` : "No model list: Ollama isn't answering";
   if (dirty && prev !== undefined && prev !== current.version && !conflict) {
@@ -866,6 +927,14 @@ async function upload() {
   } catch (e) { snack("Upload failed: " + e.message, null, null, 8000); }
   finally { setBusy(-1); }
 }
+const installCmd = `powershell -ExecutionPolicy Bypass -NoProfile -Command "irm http://${location.host}/install.ps1 | iex"`;
+const uninstallCmd = `powershell -ExecutionPolicy Bypass -NoProfile -Command "irm http://${location.host}/uninstall.ps1 | iex"`;
+$("#install-cmd").textContent = installCmd;
+$("#uninstall-cmd").textContent = uninstallCmd;
+$("#viewer-url").textContent = `http://${location.host}/captions/<meeting name>`;
+async function copyText(text, done) { try { await navigator.clipboard.writeText(text); snack(done); } catch (e) { snack("Couldn't copy. Select the command and copy it instead."); } }
+$("#copy-install").onclick = () => copyText(installCmd, "Install command copied. Paste it in PowerShell on the new computer.");
+$("#copy-uninstall").onclick = () => copyText(uninstallCmd, "Remove command copied");
 $("#dl-exe").onclick = e => { if (current && !current.status.agent) { e.preventDefault(); snack("No agent uploaded yet", "Upload", () => { $("#upload-box").open = true; }); } };
 
 // ---------- refresh loop: slows down on errors and pauses in background tabs ----------

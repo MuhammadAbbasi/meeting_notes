@@ -5,6 +5,7 @@ Wire protocol: CONTRACTS.md §1. Run: uvicorn server.hub:app --host 0.0.0.0 --po
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -37,7 +38,7 @@ WHISPER_MODEL_FILE = Path(os.getenv("WHISPER_MODEL_FILE", "./data/config/whisper
 WHISPERLIVE_CONTAINER = os.getenv("WHISPERLIVE_CONTAINER", "caption-whisperlive")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 EXE_NAME = "OfficeMeetingAgent.exe"
-HUB_VERSION = "2026.11.25-4"  # bump on every deploy-relevant change; /health reports it
+HUB_VERSION = "2026.11.25-5"  # bump on every deploy-relevant change; /health reports it
 _STATIC = Path(__file__).parent / "static"
 VIEWER_HTML = (_STATIC / "captions.html").read_text(encoding="utf-8")
 DASHBOARD_HTML = (_STATIC / "dashboard.html").read_text(encoding="utf-8")
@@ -154,12 +155,22 @@ def _ollama_models(url: str, timeout: float = 2.0) -> list[str] | None:
         return None
 
 
+_sha_cache: dict = {}
+
+
 def _agent_info() -> dict | None:
     exe = DIST_DIR / EXE_NAME
     if not exe.exists():
         return None
     st = exe.stat()
-    return {"name": EXE_NAME, "size": st.st_size, "modified": st.st_mtime}
+    key = (st.st_size, st.st_mtime_ns)
+    if _sha_cache.get("key") != key:  # hash once per uploaded build, not on every poll
+        h = hashlib.sha256()
+        with exe.open("rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        _sha_cache.update(key=key, sha256=h.hexdigest().upper())
+    return {"name": EXE_NAME, "size": st.st_size, "modified": st.st_mtime, "sha256": _sha_cache["sha256"]}
 
 
 @app.get("/api/settings", dependencies=[Depends(admin)])
@@ -281,6 +292,73 @@ async def download_exe() -> FileResponse:
     if not exe.exists():
         raise HTTPException(404, "no agent uploaded yet: build it with client/build_exe.bat and upload it from the dashboard")
     return FileResponse(exe, media_type="application/octet-stream", filename=EXE_NAME)
+
+
+INSTALL_PS1 = """# Meeting Captions installer, served by the hub at __BASE__
+# Installs for the current Windows user only (no administrator rights needed).
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$base = '__BASE__'
+$expected = '__SHA256__'
+if (-not $expected) { Write-Host 'The agent has not been uploaded to the hub yet. Ask the office admin.' -ForegroundColor Red; return }
+$dir = Join-Path $env:LOCALAPPDATA 'MeetingCaptions'
+New-Item -ItemType Directory -Force $dir | Out-Null
+$exe = Join-Path $dir 'OfficeMeetingAgent.exe'
+Write-Host 'Meeting Captions: downloading...' -ForegroundColor Cyan
+Get-Process OfficeMeetingAgent -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Milliseconds 500
+Invoke-WebRequest "$base/download/OfficeMeetingAgent.exe" -OutFile "$exe.part" -UseBasicParsing
+$hash = (Get-FileHash "$exe.part" -Algorithm SHA256).Hash
+if ($hash -ne $expected) {
+  Remove-Item "$exe.part" -Force
+  Write-Host 'The download does not match the hub''s fingerprint (damaged or changed on the way). Nothing was installed.' -ForegroundColor Red
+  return
+}
+Move-Item "$exe.part" $exe -Force
+$cfg = Join-Path $dir 'config.json'
+if (-not (Test-Path $cfg)) { Invoke-WebRequest "$base/download/config.json" -OutFile $cfg -UseBasicParsing }
+$ws = New-Object -ComObject WScript.Shell
+foreach ($folder in @([Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Startup'))) {
+  $lnk = $ws.CreateShortcut((Join-Path $folder 'Meeting Captions.lnk'))
+  $lnk.TargetPath = $exe; $lnk.WorkingDirectory = $dir; $lnk.IconLocation = "$exe,0"
+  $lnk.Description = 'Live meeting captions and minutes'; $lnk.Save()
+}
+Start-Process $exe -WorkingDirectory $dir
+Write-Host 'Done. Meeting Captions is in the Start menu, starts with Windows, and is opening now.' -ForegroundColor Green
+"""
+UNINSTALL_PS1 = """# Meeting Captions: remove from this computer (current user)
+$ErrorActionPreference = 'SilentlyContinue'
+Get-Process OfficeMeetingAgent | Stop-Process -Force
+Start-Sleep -Milliseconds 500
+foreach ($folder in @([Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Startup'))) {
+  Remove-Item (Join-Path $folder 'Meeting Captions.lnk') -Force
+}
+Remove-Item (Join-Path $env:LOCALAPPDATA 'MeetingCaptions') -Recurse -Force
+Write-Host 'Meeting Captions was removed from this computer.' -ForegroundColor Green
+"""
+
+
+def _base_url(request: Request) -> str:
+    return f"{request.url.scheme}://{request.url.netloc}"
+
+
+@app.get("/install.ps1", response_class=PlainTextResponse)
+async def install_script(request: Request) -> str:
+    """One-command install for a new PC: irm http://HUB:8085/install.ps1 | iex
+    Files fetched by PowerShell carry no browser download mark, so SmartScreen does not interrupt;
+    the script refuses a download whose SHA-256 differs from the hub's copy."""
+    agent = _agent_info()
+    return INSTALL_PS1.replace("__BASE__", _base_url(request)).replace("__SHA256__", agent["sha256"] if agent else "")
+
+
+@app.get("/uninstall.ps1", response_class=PlainTextResponse)
+async def uninstall_script() -> str:
+    return UNINSTALL_PS1
+
+
+@app.get("/icon.png", include_in_schema=False)
+async def icon() -> FileResponse:
+    return FileResponse(_STATIC / "icon.png", media_type="image/png")
 
 
 @app.get("/download/config.json")

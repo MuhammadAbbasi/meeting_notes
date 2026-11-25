@@ -1,9 +1,9 @@
 {
-  "user_name": "Muhammad",
+  "user_name": "",
   "server_ip": "192.168.10.17",
   "hub_port": 8085,
   "meeting_id": "daily",
-  "language": "auto",
+  "language": "it",
   "input_device": null,
   "overlay_alpha": 0.5,
   "capture_system_audio": false
