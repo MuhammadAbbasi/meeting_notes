@@ -130,23 +130,36 @@ class WhisperLiveTranscriber:
         self._reader: asyncio.Task | None = None
         self._tracker = SegmentTracker()
 
-    async def start(self, on_segments: OnSegments) -> None:
-        try:
-            self._ws = await websockets.connect(self.url, max_size=None)
-            await self._ws.send(json.dumps(build_handshake(self.uid, self.language, self.model)))
-            while True:
-                msg = json.loads(await asyncio.wait_for(self._ws.recv(), timeout=60))
-                if msg.get("status") == "WAIT":
-                    raise TranscriberUnavailable(f"WhisperLive full, wait ~{msg.get('message')} min")
-                if msg.get("message") == "SERVER_READY":
+    async def start(self, on_segments: OnSegments, full_retries: int = 10, retry_s: float = 3.0) -> None:
+        # WhisperLive frees a finished meeting's sessions only after it has worked through its backlog, so
+        # people joining right after a big meeting briefly get WAIT (seen on the server with 10 + 10 people).
+        # Retry for ~30 s before reporting "full".
+        for attempt in range(full_retries + 1):
+            try:
+                if await self._handshake():
                     break
-        except TranscriberUnavailable:
+            except TranscriberUnavailable:
+                await self.close()
+                raise
+            except Exception as e:  # connect refused, timeout, bad JSON
+                await self.close()
+                raise TranscriberUnavailable(f"WhisperLive unreachable: {e}") from e
             await self.close()
-            raise
-        except Exception as e:  # connect refused, timeout, bad JSON
-            await self.close()
-            raise TranscriberUnavailable(f"WhisperLive unreachable: {e}") from e
+            if attempt == full_retries:
+                raise TranscriberUnavailable("WhisperLive full: too many people are connected; try again in a minute")
+            await asyncio.sleep(retry_s)
         self._reader = asyncio.create_task(self._read(on_segments))
+
+    async def _handshake(self) -> bool:
+        """True when the server is ready, False when it is full (WAIT)."""
+        self._ws = await websockets.connect(self.url, max_size=None)
+        await self._ws.send(json.dumps(build_handshake(self.uid, self.language, self.model)))
+        while True:
+            msg = json.loads(await asyncio.wait_for(self._ws.recv(), timeout=60))
+            if msg.get("status") == "WAIT":
+                return False
+            if msg.get("message") == "SERVER_READY":
+                return True
 
     async def _read(self, on_segments: OnSegments) -> None:
         try:

@@ -99,3 +99,39 @@ def test_make_transcriber_whisperlive_default(monkeypatch):
     assert t.uid.startswith("daily:Gabriele:") and len(t.uid.split(":")[-1]) == 8
     assert t.language == "it"
     assert make_transcriber("daily", "Gabriele", "auto").language is None
+
+
+def test_whisperlive_full_is_retried_then_reported():
+    """WAIT (server full) is retried; persistent WAIT ends as a clear 'full' error, success connects."""
+    import asyncio
+    import json as _json
+    from websockets.asyncio.server import serve
+    from server.transcriber import TranscriberUnavailable, WhisperLiveTranscriber
+
+    async def scenario(waits_before_ready):
+        n = {"conn": 0}
+
+        async def handler(ws):
+            await ws.recv()
+            n["conn"] += 1
+            if n["conn"] <= waits_before_ready:
+                await ws.send(_json.dumps({"uid": "u", "status": "WAIT", "message": 0.1}))
+                await ws.wait_closed()
+            else:
+                await ws.send(_json.dumps({"uid": "u", "message": "SERVER_READY"}))
+                await ws.wait_closed()
+
+        async with serve(handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            t = WhisperLiveTranscriber(f"ws://127.0.0.1:{port}", "u", None, "m")
+            try:
+                await t.start(lambda segs: None, full_retries=2, retry_s=0.05)
+                ok = True
+            except TranscriberUnavailable as e:
+                ok = str(e)
+            await t.close()
+            return ok, n["conn"]
+
+    assert asyncio.run(scenario(2)) == (True, 3)            # full twice, then a slot frees up
+    err, conns = asyncio.run(scenario(99))
+    assert "full" in err and conns == 3                       # gives up after the retries

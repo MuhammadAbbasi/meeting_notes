@@ -52,7 +52,7 @@ sends nothing.
 
 ### 1.3 HTTP
 
-- `GET /health` → `{"status":"ok","transcriber":"mock"|"whisperlive","rooms":int,"speakers":int,"listeners":int}`
+- `GET /health` → `{"status":"ok","version":str,"transcriber":"mock"|"whisperlive","rooms":int,"speakers":int,"listeners":int}`
 - `GET /captions/{meeting_id}` → HTML viewer (live + history). It and `/dashboard` are sent with
   `Cache-Control: no-cache`, so a redeploy reaches every open screen on its next load.
 - `GET /api/meetings/{meeting_id}/segments` → JSON list of persisted completed segments,
@@ -133,8 +133,8 @@ as 1.3), append-only.
 3. To finish: binary frame with bytes `END_OF_AUDIO`.
 4. Server → hub text JSON, always with `"uid"`:
    - `{"uid","message":"SERVER_READY","backend":"faster_whisper"}` – start forwarding.
-   - `{"uid","status":"WAIT","message":<minutes float>}` – server full; hub reports
-     `error` to the client (M1).
+   - `{"uid","status":"WAIT","message":<minutes float>}` – server full; the hub retries for ~30 s
+     (sessions of a finished meeting are freed late), then reports `error` "WhisperLive full" to the client.
    - `{"uid","language":"it","language_prob":0.98}` – informational.
    - `{"uid","segments":[{"start":"12.340","end":"14.120","text":" ...",
       "completed":true|false}, ...]}` – the last ≤10 *completed* segments, plus at most

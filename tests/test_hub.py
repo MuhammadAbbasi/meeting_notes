@@ -452,3 +452,37 @@ def test_last_sentence_kept_when_speaker_leaves(monkeypatch, tmp_path):
                 break
             time.sleep(0.05)
         assert [r["text"] for r in rows] == ["il tracker ha perso la comunicazione"]
+
+
+class _RepeatingTranscriber(_StallingTranscriber):
+    """After a pause the real recognizer keeps resending the same partial, sometimes with a shifted start."""
+
+    async def feed(self, pcm):
+        from server.transcriber import Segment
+        self.fed += 1
+        text = "the manual cleaning crews were working near live strings"
+        if self.fed == 1:
+            await self.on([Segment(90.8, 96.1, text, False)])
+        elif self.fed in (3, 4, 5):          # same partial again after it was made final
+            await self.on([Segment(90.8, 96.1, text, False)])
+        elif self.fed == 6:                  # re-segmented: shifted start, same words
+            await self.on([Segment(90.0, 96.1, text, True)])
+        elif self.fed == 7:                  # a short phrase said twice is kept
+            await self.on([Segment(100.0, 100.5, "ok", True)])
+        elif self.fed == 8:
+            await self.on([Segment(101.0, 101.5, "ok", True)])
+
+
+def test_final_sentence_not_repeated(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path, PARTIAL_COMMIT_S="0.4") as c:
+        monkeypatch.setattr(c.hub, "make_transcriber", lambda *a, **k: _RepeatingTranscriber())
+        with c.websocket_connect("/ws/daily/Luca") as ws:
+            next_of(ws, "ready")
+            ws.send_bytes(pcm(0.25))
+            next_of(ws, "caption", completed=True)       # finalised after the pause
+            for _ in range(7):
+                ws.send_bytes(pcm(0.25))
+            next_of(ws, "caption", completed=True, text="ok")
+            next_of(ws, "caption", completed=True, text="ok")
+        texts = [r["text"] for r in c.get("/api/meetings/daily/segments").json()]
+        assert texts == ["the manual cleaning crews were working near live strings", "ok", "ok"]

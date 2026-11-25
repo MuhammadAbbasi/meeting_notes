@@ -19,7 +19,9 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Red
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-from server.deduplicator import CrossTalkFilter, is_room_noise
+from collections import deque
+
+from server.deduplicator import CrossTalkFilter, is_room_noise, normalize_text
 from server.docker_api import restart_container
 from server.meeting import MEETING_ID_RE, SPEAKER_RE, MeetingRoom, StreamClock, caption_frame
 from server.odoo_client import OdooMeetingClient
@@ -35,6 +37,7 @@ WHISPER_MODEL_FILE = Path(os.getenv("WHISPER_MODEL_FILE", "./data/config/whisper
 WHISPERLIVE_CONTAINER = os.getenv("WHISPERLIVE_CONTAINER", "caption-whisperlive")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 EXE_NAME = "OfficeMeetingAgent.exe"
+HUB_VERSION = "2026.11.25-4"  # bump on every deploy-relevant change; /health reports it
 _STATIC = Path(__file__).parent / "static"
 VIEWER_HTML = (_STATIC / "captions.html").read_text(encoding="utf-8")
 DASHBOARD_HTML = (_STATIC / "dashboard.html").read_text(encoding="utf-8")
@@ -113,7 +116,7 @@ async def root() -> RedirectResponse:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "transcriber": S.get("transcriber"), "rooms": len(rooms),
+    return {"status": "ok", "version": HUB_VERSION, "transcriber": S.get("transcriber"), "rooms": len(rooms),
             "speakers": sum(len(r.speakers) for r in rooms.values()),
             "listeners": sum(len(r.listeners) for r in rooms.values())}
 
@@ -430,8 +433,19 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
     # the server, without this a 10-person turn-taking meeting kept only 42% of the words.
     pending: dict = {}          # current partial: start, frame, since
     committed: set[float] = set()  # starts already finalised by us; WhisperLive's later copy is skipped
+    recent: deque = deque(maxlen=12)  # this person's last final sentences (normalised)
+
+    def already_said(seg) -> bool:
+        """WhisperLive keeps resending a sentence after it is final, sometimes with a shifted start;
+        seen on the server as the same sentence stored up to 7 times. Short phrases ("ok", "sì") are
+        exempt so that saying them twice is kept."""
+        if seg.start in committed:
+            return True
+        words = normalize_text(seg.text)
+        return len(words.split()) >= 4 and any(words == r or words in r for r in recent)
 
     def emit_completed(frame: dict) -> None:
+        recent.append(normalize_text(frame["text"]))
         room.dedup.add(frame)
         task = asyncio.create_task(_settle(room, frame))
         _pending.add(task)
@@ -455,10 +469,12 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
             if seg.completed:
                 if pending.get("start") == seg.start:
                     pending.clear()
-                if seg.start in committed:  # ponytail: WhisperLive's longer final text is dropped; fine for minutes
+                if already_said(seg):  # ponytail: WhisperLive's longer final text is dropped; fine for minutes
                     continue
                 emit_completed(frame)
             else:
+                if already_said(seg):
+                    continue
                 if pending.get("start") != seg.start or pending["frame"]["text"] != frame["text"]:
                     pending.update(start=seg.start, frame=frame, since=time.monotonic())
                 await room.broadcast(frame)
