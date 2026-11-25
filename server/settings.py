@@ -28,6 +28,7 @@ FIELDS: dict[str, tuple[str, Any, Any]] = {
     "dedup_similarity": ("DEDUP_SIMILARITY", 0.78, float),
     "noise_floor_rms": ("NOISE_FLOOR_RMS", 0.005, float),
     "partial_commit_s": ("PARTIAL_COMMIT_S", 3.0, float),
+    "same_room_ratio": ("SAME_ROOM_RATIO", 5.0, float),
     "default_meeting": ("DEFAULT_MEETING", "daily", str),
     "default_language": ("DEFAULT_LANGUAGE", "it", str),
 }

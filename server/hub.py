@@ -38,7 +38,7 @@ WHISPER_MODEL_FILE = Path(os.getenv("WHISPER_MODEL_FILE", "./data/config/whisper
 WHISPERLIVE_CONTAINER = os.getenv("WHISPERLIVE_CONTAINER", "caption-whisperlive")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 EXE_NAME = "OfficeMeetingAgent.exe"
-HUB_VERSION = "2026.11.25-5"  # bump on every deploy-relevant change; /health reports it
+HUB_VERSION = "2026.11.25-6"  # bump on every deploy-relevant change; /health reports it
 _STATIC = Path(__file__).parent / "static"
 VIEWER_HTML = (_STATIC / "captions.html").read_text(encoding="utf-8")
 DASHBOARD_HTML = (_STATIC / "dashboard.html").read_text(encoding="utf-8")
@@ -87,6 +87,24 @@ async def _settle(room: MeetingRoom, frame: dict) -> None:
     else:
         log.info("%s: suppressed bleed from %s: %r", room.meeting_id, frame["speaker"], frame["text"][:40])
         await room.broadcast({"type": "retract", "meeting_id": room.meeting_id, "speaker": frame["speaker"]})
+
+
+ECHO_PAD_S = 3.0  # recognizer timestamps scatter by a few seconds (measured), so compare a padded window
+
+
+def is_echo(room: MeetingRoom, speaker: str, clock: StreamClock, frame: dict) -> bool:
+    """Same-room echo: another microphone was `same_room_ratio` times louder around this caption, so this
+    microphone only heard someone else across the room. Text matching misses these (each microphone splits
+    speech differently). Measured on a real 10-person one-room run: 92% of echo captions removed; with
+    headsets nothing is removed. Two people talking at once each stay loudest on their own microphone."""
+    ratio = S.get("same_room_ratio")
+    if ratio <= 0 or len(room.clocks) < 2 or clock.start_ts is None:
+        return False
+    a, b = frame["ts"] - ECHO_PAD_S, frame["ts"] + (frame["end"] - frame["start"]) + ECHO_PAD_S
+    mine = clock.peak_between(a - clock.start_ts, b - clock.start_ts)
+    loudest = max((c.peak_between(a - c.start_ts, b - c.start_ts) for name, c in list(room.clocks.items())
+                   if name != speaker and c.start_ts is not None), default=0.0)
+    return loudest >= ratio * max(mine, 1e-4)
 
 
 def _drop_if_empty(room: MeetingRoom) -> None:
@@ -446,7 +464,8 @@ async def _finalize(meeting_id: str) -> dict:
         raise HTTPException(404, "no completed captions for this meeting")
     llm_error = None
     try:
-        markdown = await asyncio.to_thread(synthesize, segs, meeting_id, S.get("ollama_url"), S.get("ollama_model"))
+        # 10 min: on a GPU shared with live recognition a long meeting took over the old 5 min (measured)
+        markdown = await asyncio.to_thread(synthesize, segs, meeting_id, S.get("ollama_url"), S.get("ollama_model"), 600)
         llm = True
     except SynthesisUnavailable as e:
         log.warning("%s: %s; falling back to transcript", meeting_id, e)
@@ -504,6 +523,7 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
         await _close(old, 4001)
 
     clock = StreamClock()
+    room.clocks[speaker] = clock
 
     # WhisperLive only finalises a sentence when more audio from the same person confirms it. In a meeting
     # people speak and then stay quiet for minutes, so their last sentence would hang "in progress" (or be
@@ -538,7 +558,7 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
     async def on_segments(segs) -> None:
         for seg in segs:
             frame = caption_frame(meeting_id, speaker, seg, clock)
-            if is_room_noise(frame["text"], frame["rms"], S.get("noise_floor_rms")):
+            if is_room_noise(frame["text"], frame["rms"], S.get("noise_floor_rms")) or is_echo(room, speaker, clock, frame):
                 if seg.completed:  # clear a partial that screens may already show for this phantom sentence
                     if pending.get("start") == seg.start:
                         pending.clear()
@@ -606,6 +626,8 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
             await transcriber.close()
         commit_pending()  # the last sentence of someone who leaves is kept, not lost
         room.remove_speaker(speaker, ws)
+        if room.clocks.get(speaker) is clock:
+            room.clocks.pop(speaker, None)
         await _close(ws)
         await room.broadcast(room.roster())
         _drop_if_empty(room)

@@ -123,3 +123,13 @@ def test_add_speaker_returns_replaced_and_remove_is_guarded():
     assert room.speakers["Muhammad"] is b
     room.remove_speaker("Muhammad", b)
     assert room.speakers == {}
+
+
+def test_peak_between_finds_loudest_chunk_in_window():
+    c = StreamClock()
+    for amp in (0.01, 0.2, 0.01, 0.05):
+        c.add(np.full(4000, amp, dtype=np.float32).tobytes())   # 0.25 s chunks
+    assert c.peak_between(0.0, 0.25) == pytest.approx(0.01)
+    assert c.peak_between(0.1, 0.6) == pytest.approx(0.2)
+    assert c.peak_between(0.6, 1.0) == pytest.approx(0.05)
+    assert c.peak_between(5, 6) == 0.0

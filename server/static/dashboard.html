@@ -413,6 +413,7 @@ dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2
           <p>Sentences quieter than the background noise level are treated as room noise, which stops speech recognition from inventing phrases like “Thank you.” over silence. When two computers in one room hear the same sentence, only the louder microphone's caption is kept.</p>
           <div class="fields">
             <div class="tf"><input name="noise_floor_rms" id="f-n" type="number" step="0.001" min="0" max="1" placeholder=" "><label for="f-n">Background noise level</label><div class="help">0.005 suits most rooms. Raise it if captions show things nobody said; lower it if quiet speakers are missed; 0 turns it off.</div></div>
+            <div class="tf"><input name="same_room_ratio" id="f-sr" type="number" step="0.5" min="0" placeholder=" "><label for="f-sr">Same-room echo filter (times louder)</label><div class="help">A caption is dropped when another microphone was this many times louder at that moment, meaning this one only heard someone across the room. 5 suits shared rooms; 0 turns it off.</div></div>
             <div class="tf"><input name="partial_commit_s" id="f-pc" type="number" step="0.5" min="0" placeholder=" "><label for="f-pc">Finish a sentence after silence (seconds)</label><div class="help">A sentence counts as said once the speaker pauses this long. 3 suits meetings; 0 waits for the recognizer, which can take minutes.</div></div>
             <div class="tf"><input name="dedup_hold_s" id="f-h" type="number" step="0.1" min="0" placeholder=" "><label for="f-h">Wait before showing (seconds)</label><div class="help">0 shows captions at once and turns this off</div></div>
             <div class="tf"><input name="dedup_window_s" id="f-w" type="number" step="0.1" min="0" placeholder=" "><label for="f-w">Same sentence within (seconds)</label></div>
@@ -817,7 +818,7 @@ $("#d-finalize").onclick = async () => {
 function formValues() {
   const v = Object.fromEntries(new FormData($("#form")).entries());
   v.odoo_project_id = v.odoo_project_id === "" ? null : Number(v.odoo_project_id);
-  for (const k of ["dedup_hold_s", "dedup_window_s", "dedup_similarity", "noise_floor_rms", "partial_commit_s"]) v[k] = Number(v[k]);
+  for (const k of ["dedup_hold_s", "dedup_window_s", "dedup_similarity", "noise_floor_rms", "partial_commit_s", "same_room_ratio"]) v[k] = Number(v[k]);
   if (v.default_meeting && !/^[A-Za-z0-9_-]{1,64}$/.test(v.default_meeting)) throw new Error("The meeting name can only use letters, digits, - and _");
   const aliases = {};
   for (const line of v.speaker_aliases.split("\n")) {
@@ -832,7 +833,7 @@ function formValues() {
 const LABELS = { transcriber: "mode", whisperlive_url: "recognition address", whisper_model: "speech model", ollama_url: "Ollama address",
   ollama_model: "minutes model", odoo_url: "Odoo address", odoo_db: "Odoo database", odoo_user: "Odoo user", odoo_api_key: "Odoo API key",
   odoo_project_id: "Odoo project", speaker_aliases: "names in Odoo", dedup_hold_s: "wait before showing", dedup_window_s: "same sentence within",
-  dedup_similarity: "how similar", noise_floor_rms: "background noise level", partial_commit_s: "finish a sentence after silence", default_meeting: "meeting name", default_language: "language" };
+  dedup_similarity: "how similar", noise_floor_rms: "background noise level", partial_commit_s: "finish a sentence after silence", same_room_ratio: "same-room echo filter", default_meeting: "meeting name", default_language: "language" };
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 function setField(k, v) {
   const el = $("#form").elements[k]; if (!el) return;

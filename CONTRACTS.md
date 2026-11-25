@@ -111,6 +111,11 @@ is emitted, the other retracted. Equal `rms` → the first to arrive wins.
 Whisper silence phrase ("Thank you.", "감사합니다", "Sottotitoli creati dalla comunità Amara.org" …).
 A dropped completed caption is answered with a `retract` so screens clear its partial.
 
+**Same-room echo (before the above):** a caption is dropped (and its partial retracted) when another
+microphone's loudest 256 ms chunk within ±3 s of the caption is at least `same_room_ratio` (default 5;
+0 disables) times this microphone's loudest chunk there. Measured on a real 10-person one-room run:
+92% of echo captions removed; with headsets nothing removed.
+
 **Broadcast:** every frame goes to all speakers and listeners concurrently; a client that fails or
 does not accept the frame within 2 s is dropped from the room, so one stalled screen never delays
 the others.

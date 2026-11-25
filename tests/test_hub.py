@@ -16,6 +16,7 @@ def make_client(monkeypatch, tmp_path, **env):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DEDUP_HOLD_S", "0")
     monkeypatch.setenv("NOISE_FLOOR_RMS", "0")  # most tests send digital silence; the noise test sets its own
+    monkeypatch.setenv("SAME_ROOM_RATIO", "0")  # each echo filter is tested on its own; the loudness test sets it
     monkeypatch.setenv("ADMIN_PASSWORD", "pw")
     monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:1")
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
@@ -185,7 +186,7 @@ def _record_two(client):
 def test_finalize_without_odoo(client, monkeypatch):
     for k in ("ODOO_URL", "ODOO_DB", "ODOO_USER", "ODOO_API_KEY"):
         monkeypatch.delenv(k, raising=False)
-    monkeypatch.setattr(client.hub, "synthesize", lambda segs, mid, url, model: CANNED_MD)
+    monkeypatch.setattr(client.hub, "synthesize", lambda segs, mid, url, model, *timeout: CANNED_MD)
     with client.websocket_connect("/ws/daily/Muhammad") as ws, client.websocket_connect("/listen/daily") as lst:
         next_of(ws, "roster")
         ws.send_bytes(pcm(4.0))
@@ -302,7 +303,7 @@ def test_agent_upload_and_download(client):
 
 
 def test_meeting_history_and_minutes(client, monkeypatch):
-    monkeypatch.setattr(client.hub, "synthesize", lambda segs, mid, url, model: CANNED_MD)
+    monkeypatch.setattr(client.hub, "synthesize", lambda segs, mid, url, model, *timeout: CANNED_MD)
     assert client.get("/api/meetings").json() == []
     with client.websocket_connect("/ws/daily/Muhammad") as ws:
         next_of(ws, "roster")
@@ -368,7 +369,7 @@ def test_finalize_runs_once_when_two_people_press(client, monkeypatch):
     import httpx
     calls = []
 
-    def slow_synth(segs, mid, url, model):
+    def slow_synth(segs, mid, url, model, *timeout):
         calls.append(mid)
         time.sleep(0.6)
         return CANNED_MD
@@ -501,3 +502,28 @@ def test_install_script_pins_the_uploaded_build(client):
     assert client.get("/api/settings", auth=AUTH).json()["status"]["agent"]["sha256"] == sha
     assert "removed" in client.get("/uninstall.ps1").text
     assert client.get("/icon.png").headers["content-type"] == "image/png"
+
+
+def test_same_room_echo_dropped_but_simultaneous_speakers_kept(monkeypatch, tmp_path):
+    """Two mics in one room: Gabriele's mic hears Muhammad 10x quieter (different words, so text dedup can't
+    help). The echo must go; when both actually talk at normal volume, both are kept."""
+    script = tmp_path / "s.json"
+    script.write_text(json.dumps({"Muhammad": ["il tracker ha perso la comunicazione ieri sera"],
+                                  "Gabriele": ["the inverter telemetry looks fine this morning"]}), encoding="utf-8")
+    data = tmp_path / "d"
+    data.mkdir()
+    with make_client(monkeypatch, data, MOCK_SCRIPT=str(script), SAME_ROOM_RATIO="5") as c:
+        with c.websocket_connect("/ws/room/Muhammad") as a, c.websocket_connect("/ws/room/Gabriele") as b:
+            next_of(a, "ready"); next_of(b, "ready")
+            a.send_bytes(pcm(1.0, 0.2)); b.send_bytes(pcm(1.0, 0.02))      # Muhammad speaks, Gabriele's mic: echo
+            a.send_bytes(pcm(1.0, 0.2)); b.send_bytes(pcm(1.0, 0.02))
+            next_of(a, "caption", completed=True, speaker="Muhammad")
+            next_of(a, "retract", speaker="Gabriele")
+        assert [r["speaker"] for r in c.get("/api/meetings/room/segments").json()] == ["Muhammad"]
+        with c.websocket_connect("/ws/both/Muhammad") as a, c.websocket_connect("/ws/both/Gabriele") as b:
+            next_of(a, "ready"); next_of(b, "ready")
+            for _ in range(2):
+                a.send_bytes(pcm(1.0, 0.2)); b.send_bytes(pcm(1.0, 0.15))  # both really talking
+            next_of(a, "caption", completed=True, speaker="Muhammad")
+            next_of(a, "caption", completed=True, speaker="Gabriele")
+        assert sorted(r["speaker"] for r in c.get("/api/meetings/both/segments").json()) == ["Gabriele", "Muhammad"]

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import bisect
 import json
 import re
 import time
@@ -26,6 +27,7 @@ class StreamClock:
         self.start_ts: float | None = None
         self._samples = 0
         self._rms: list[tuple[float, float, float]] = []  # (chunk start, chunk end, rms)
+        self._t0: list[float] = []  # chunk starts, sorted, for bisect
 
     @property
     def audio_time(self) -> float:
@@ -41,7 +43,14 @@ class StreamClock:
         t0 = self.audio_time
         self._samples += chunk.size
         self._rms.append((t0, self.audio_time, rms))
+        self._t0.append(t0)
         return rms
+
+    def peak_between(self, start: float, end: float) -> float:
+        """Loudest chunk RMS overlapping [start, end) in this stream's audio time (bisect: cheap on 4 h streams)."""
+        i = max(0, bisect.bisect_right(self._t0, start) - 1)
+        j = bisect.bisect_left(self._t0, end)
+        return max((r for _, t1, r in self._rms[i:j] if t1 > start), default=0.0)
 
     def rms_between(self, start: float, end: float) -> float:
         """Mean RMS of chunks overlapping [start, end)."""
@@ -73,6 +82,7 @@ class MeetingRoom:
         self.path = Path(data_dir) / f"{meeting_id}.jsonl"
         self.speakers: dict[str, Any] = {}
         self.listeners: set[Any] = set()
+        self.clocks: dict[str, StreamClock] = {}  # per speaker, for the same-room echo check
         self.dedup = dedup or CrossTalkFilter()
 
     def add_speaker(self, name: str, ws: Any) -> Any:
