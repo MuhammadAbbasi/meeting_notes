@@ -395,3 +395,60 @@ def test_room_noise_is_not_captioned(monkeypatch, tmp_path):
             ws.send_bytes(pcm(2.0, amplitude=0.08))        # speech-level audio
             assert next_of(ws, "caption", completed=True)["text"] == "Muhammad segment 2"
         assert [r["text"] for r in c.get("/api/meetings/daily/segments").json()] == ["Muhammad segment 2"]
+
+
+class _StallingTranscriber:
+    """Real-recognizer behaviour: a partial, then nothing while the speaker is quiet; the final copy may come later."""
+    kind = "fake"
+
+    def __init__(self):
+        self.fed = 0
+
+    async def start(self, on_segments):
+        self.on = on_segments
+
+    async def feed(self, pcm):
+        from server.transcriber import Segment
+        self.fed += 1
+        if self.fed == 1:
+            await self.on([Segment(0.0, 1.5, "il tracker ha perso la comunicazione", False)])
+        elif self.fed == 3:  # WhisperLive's own final copy of the same sentence, long after
+            await self.on([Segment(0.0, 1.5, "il tracker ha perso la comunicazione per due ore", True)])
+
+    async def end(self):
+        pass
+
+    async def close(self):
+        pass
+
+
+def test_quiet_speaker_sentence_is_finalised_once(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path, PARTIAL_COMMIT_S="0.5") as c:
+        monkeypatch.setattr(c.hub, "make_transcriber", lambda *a, **k: _StallingTranscriber())
+        with c.websocket_connect("/ws/daily/Anna") as ws:
+            next_of(ws, "ready")
+            ws.send_bytes(pcm(0.25))                          # partial arrives, then silence
+            assert next_of(ws, "caption", completed=False)["text"] == "il tracker ha perso la comunicazione"
+            done = next_of(ws, "caption", completed=True)     # made final by the hub after 0.5 s
+            assert done["text"] == "il tracker ha perso la comunicazione"
+            ws.send_bytes(pcm(0.25))
+            ws.send_bytes(pcm(0.25))                          # recognizer's late final copy: not shown twice
+            ws.send_bytes(pcm(0.25))
+        rows = c.get("/api/meetings/daily/segments").json()
+        assert [r["text"] for r in rows] == ["il tracker ha perso la comunicazione"]
+
+
+def test_last_sentence_kept_when_speaker_leaves(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path, PARTIAL_COMMIT_S="60") as c:
+        monkeypatch.setattr(c.hub, "make_transcriber", lambda *a, **k: _StallingTranscriber())
+        with c.websocket_connect("/ws/daily/Luca") as ws:
+            next_of(ws, "ready")
+            ws.send_bytes(pcm(0.25))
+            next_of(ws, "caption", completed=False)
+        import time
+        for _ in range(40):
+            rows = c.get("/api/meetings/daily/segments").json()
+            if rows:
+                break
+            time.sleep(0.05)
+        assert [r["text"] for r in rows] == ["il tracker ha perso la comunicazione"]

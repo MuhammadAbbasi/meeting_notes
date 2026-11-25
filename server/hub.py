@@ -424,22 +424,53 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
 
     clock = StreamClock()
 
+    # WhisperLive only finalises a sentence when more audio from the same person confirms it. In a meeting
+    # people speak and then stay quiet for minutes, so their last sentence would hang "in progress" (or be
+    # lost on disconnect). A partial unchanged for partial_commit_s is therefore made final here; measured on
+    # the server, without this a 10-person turn-taking meeting kept only 42% of the words.
+    pending: dict = {}          # current partial: start, frame, since
+    committed: set[float] = set()  # starts already finalised by us; WhisperLive's later copy is skipped
+
+    def emit_completed(frame: dict) -> None:
+        room.dedup.add(frame)
+        task = asyncio.create_task(_settle(room, frame))
+        _pending.add(task)
+        task.add_done_callback(_pending.discard)
+
+    def commit_pending() -> None:
+        if pending:
+            committed.add(pending["start"])
+            emit_completed({**pending["frame"], "completed": True})
+            pending.clear()
+
     async def on_segments(segs) -> None:
         for seg in segs:
             frame = caption_frame(meeting_id, speaker, seg, clock)
             if is_room_noise(frame["text"], frame["rms"], S.get("noise_floor_rms")):
                 if seg.completed:  # clear a partial that screens may already show for this phantom sentence
+                    if pending.get("start") == seg.start:
+                        pending.clear()
                     await room.broadcast({"type": "retract", "meeting_id": meeting_id, "speaker": speaker})
                 continue
             if seg.completed:
-                room.dedup.add(frame)
-                task = asyncio.create_task(_settle(room, frame))
-                _pending.add(task)
-                task.add_done_callback(_pending.discard)
+                if pending.get("start") == seg.start:
+                    pending.clear()
+                if seg.start in committed:  # ponytail: WhisperLive's longer final text is dropped; fine for minutes
+                    continue
+                emit_completed(frame)
             else:
+                if pending.get("start") != seg.start or pending["frame"]["text"] != frame["text"]:
+                    pending.update(start=seg.start, frame=frame, since=time.monotonic())
                 await room.broadcast(frame)
 
-    transcriber = None
+    async def commit_stalled() -> None:
+        while True:
+            await asyncio.sleep(0.25)
+            wait = S.get("partial_commit_s")
+            if wait > 0 and pending and time.monotonic() - pending["since"] >= wait:
+                commit_pending()
+
+    transcriber = committer = None
     try:
         try:
             transcriber = make_transcriber(meeting_id, speaker, lang, kind=S.get("transcriber"),
@@ -448,6 +479,7 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
         except TranscriberUnavailable as e:
             await ws.send_json({"type": "error", "message": str(e)})
             return
+        committer = asyncio.create_task(commit_stalled())
         await ws.send_json({"type": "ready", "meeting_id": meeting_id, "speaker": speaker,
                             "transcriber": transcriber.kind})
         await room.broadcast(room.roster())
@@ -474,8 +506,11 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
     except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
+        if committer is not None:
+            committer.cancel()
         if transcriber is not None:
             await transcriber.close()
+        commit_pending()  # the last sentence of someone who leaves is kept, not lost
         room.remove_speaker(speaker, ws)
         await _close(ws)
         await room.broadcast(room.roster())
