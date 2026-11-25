@@ -201,8 +201,7 @@ $env:MOCK_SCRIPT="tests\mock_script_bleed.json"   # restart the hub after changi
 # 10-person, 10-minute bilingual meeting on panel cleaning (Windows voices), then score the captions
 .venv\Scripts\python tests\meeting_panel_cleaning.py C:\tmp\meeting10        # MEETING_BLEED=0 for headsets
 #   -> prints the speaker and language lists; run simulate_multi_user_meeting.py with --wav <mic files> --langs <langs>
-.venv\Scripts\python tests\score_meeting.py --hub http://192.168.10.17:8085 --meeting <id> --reference C:\tmp\meeting10
-eference.json
+.venv\Scripts\python tests\score_meeting.py --hub http://192.168.10.17:8085 --meeting <id> --reference C:\tmp\meeting10\reference.json
 
 # real speech against the GPU host, with added noise
 .venv\Scripts\python tests\simulate_multi_user_meeting.py --hub ws://192.168.10.17:8085 --wav meeting.wav --noise 0.02
