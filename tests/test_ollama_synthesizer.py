@@ -109,3 +109,9 @@ def test_synthesize_chunks_long_transcript(monkeypatch):
     md = syn.synthesize(big_segs, "long", "http://ollama:11434", "m")
     assert len(calls) >= 2
     assert "Part 1. Part 2." in md and "| Gabriele | Task 1 |  |" in md and "| Gabriele | Task 2 |  |" in md
+
+
+def test_clean_transcript_removes_stutters_and_fillers():
+    noisy = "Ciao, ciao, e, e, e, e, sì, sì, sì, noi, noi, noi, controlliamo i cavi."
+    assert syn.clean_transcript_text(noisy) == "Ciao, sì, noi, controlliamo i cavi."
+    assert syn.clean_transcript_text("e, e, e, allora") == ""

@@ -21,6 +21,7 @@ MINUTES_SCHEMA = {
                 "properties": {
                     "topic": {"type": "string"},
                     "summary": {"type": "string"},
+                    "key_points": {"type": "array", "items": {"type": "string"}},
                     "speakers": {"type": "array", "items": {"type": "string"}},
                 },
                 "required": ["topic", "summary"],
@@ -39,39 +40,58 @@ MINUTES_SCHEMA = {
                 "required": ["owner", "task", "deadline"],
             },
         },
+        "open_questions": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["executive_summary", "topics", "key_decisions", "action_items"],
 }
 CHUNK_CHARS = 12000
 
-SYSTEM_PROMPT = """You are the executive minute-taker of an engineering team meeting.
+SYSTEM_PROMPT = """You are an executive technical minute-taker.
 You receive a time-ordered transcript where each line is `[Speaker] text`. Speech-to-text noise
-(misspellings, repeated filler syllables, mixed Italian/English) is expected: interpret charitably,
-ignore filler/noise, and NEVER invent facts.
+(misspellings, mixed Italian/English, leftover filler) may appear: interpret charitably and NEVER
+invent facts.
 
 Rules:
-1. NEVER copy-paste or quote the raw transcript verbatim. Synthesize and summarize into concise,
-   well-structured prose.
-2. Group discussion by clear topics, attributing speakers accurately.
-3. Write ALL text values in the specified Target Language.
-4. Resolve relative deadlines ("next week", "prossima settimana", "next month") using Today's Date
-   into YYYY-MM-DD (or "" if none).
-5. Return ONLY valid JSON matching the schema with keys:
-   executive_summary, topics ([{topic, summary, speakers}]), key_decisions ([str]),
-   action_items ([{owner, task, deadline}]).
+1. NEVER copy-paste or quote the raw transcript verbatim. Distill into crisp, professional prose.
+2. Ignore all filler words, greetings, and small talk unless they contain a technical decision or task.
+3. `executive_summary`: 2-3 clear sentences covering the meeting's purpose and main outcome.
+4. `topics`: Group discussion by clear topic names, each with a concise 1-2 sentence `summary`,
+   concrete `key_points` bullets, and `speakers` involved.
+5. `key_decisions`: Concrete decisions agreed upon (empty list if none).
+6. `action_items`: Specific, actionable tasks with `owner` (speaker name or `Unassigned`), `task`
+   (imperative verb + clear deliverable), and `deadline` (`YYYY-MM-DD` resolved from Today's Date,
+   or `""` if none).
+7. `open_questions`: Unresolved questions or blockers needing follow-up (empty list if none).
+8. Write ALL text values in the specified Target Language.
+9. Return ONLY valid JSON matching the schema.
    (Required Markdown headings when rendered: ## Executive Summary, ## Consolidated Discussion by Topic,
    ## Key Decisions, ## Action Items.)"""
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _FENCE = re.compile(r"^\s*```[a-zA-Z]*\s*\n(.*?)\n\s*```\s*$", re.DOTALL)
+_REPEAT_WORD = re.compile(r"\b(\w{1,20})(?:[\s,;]+\1){1,}\b", re.IGNORECASE)
+_FILLER_ONLY = re.compile(r"^(?:[eaoiu]|s[iì]|no|ok|okay|allora|cio[eè]|ehm+|uhm+|ah+|beh|mah|va bene|grazie|ciao)[\s.,!?]*$", re.IGNORECASE)
 
 
 class SynthesisUnavailable(Exception):
     pass
 
 
+def clean_transcript_text(text: str) -> str:
+    """Collapse Whisper stutter/repeating-word loops and strip pure filler utterances."""
+    cleaned = _REPEAT_WORD.sub(lambda m: "" if len(m.group(1)) == 1 else m.group(1), text)
+    cleaned = re.sub(r"(?:\s*,\s*){2,}", ", ", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" ,;")
+    return "" if _FILLER_ONLY.fullmatch(cleaned) else cleaned
+
+
 def transcript_lines(segments: list[dict]) -> list[str]:
-    return [f"[{s['speaker']}] {s['text']}" for s in segments if s.get("text", "").strip()]
+    out = []
+    for s in segments:
+        t = clean_transcript_text(s.get("text", "").strip())
+        if t:
+            out.append(f"[{s['speaker']}] {t}")
+    return out
 
 
 def transcript_markdown(segments: list[dict]) -> str:
@@ -107,8 +127,10 @@ def render_minutes_json(data: dict) -> str:
         title = str(t.get("topic") or "Discussion").strip()
         body = str(t.get("summary") or "").strip()
         sp = ", ".join(str(s).strip() for s in (t.get("speakers") or []) if str(s).strip())
-        if body:
-            topics.append(f"- **{title}**: {body}" + (f" [{sp}]" if sp else ""))
+        kps = [f"  - {str(kp).strip()}" for kp in (t.get("key_points") or []) if str(kp).strip()]
+        if body or kps:
+            line = f"- **{title}**: {body}" + (f" [{sp}]" if sp else "")
+            topics.append("\n".join([line, *kps]))
     decisions = [f"- {str(d).strip()}" for d in (data.get("key_decisions") or []) if str(d).strip()]
     rows = []
     for item in data.get("action_items") or []:
@@ -117,6 +139,7 @@ def render_minutes_json(data: dict) -> str:
         dl = str(item.get("deadline") or "").replace("|", "/").strip()
         if task:
             rows.append(f"| {owner} | {task} | {dl} |")
+    questions = [f"- {str(q).strip()}" for q in (data.get("open_questions") or []) if str(q).strip()]
     parts = [
         "## Executive Summary", summary, "",
         "## Consolidated Discussion by Topic", "\n".join(topics) if topics else "- No topics recorded.", "",
@@ -124,6 +147,8 @@ def render_minutes_json(data: dict) -> str:
         "## Action Items", "", "| Owner | Task | Deadline |", "| --- | --- | --- |",
         *rows,
     ]
+    if questions:
+        parts.extend(["", "## Open Questions", "\n".join(questions)])
     return "\n".join(parts).strip() + "\n"
 
 
