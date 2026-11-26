@@ -28,6 +28,7 @@ class ActionItem:
 class OdooMeetingClient:
     def __init__(self, url: str | None = None, db: str | None = None, username: str | None = None,
                  api_key: str | None = None, project_id: int | None = None,
+                 knowledge_parent: str | None = None,
                  speaker_aliases: dict[str, str] | None = None) -> None:
         self.url = re.sub(r"/jsonrpc/?$", "", (url or os.getenv("ODOO_URL", "")).rstrip("/"))
         self.db = db or os.getenv("ODOO_DB", "")
@@ -35,6 +36,9 @@ class OdooMeetingClient:
         self.api_key = api_key or os.getenv("ODOO_API_KEY", "")
         raw_project_id = project_id or os.getenv("ODOO_PROJECT_ID")
         self.project_id = int(raw_project_id) if raw_project_id else None
+        if knowledge_parent is None:
+            knowledge_parent = os.getenv("ODOO_KNOWLEDGE_PARENT", "Meeting Notes")
+        self.knowledge_parent = knowledge_parent.strip()
         if speaker_aliases is None and os.getenv("SPEAKER_ALIASES"):
             speaker_aliases = json.loads(os.environ["SPEAKER_ALIASES"])
         self.speaker_aliases = {k.strip().lower(): v.strip() for k, v in (speaker_aliases or {}).items()}
@@ -214,24 +218,47 @@ class OdooMeetingClient:
         return None
 
     @staticmethod
-    def _markdown_to_basic_html(markdown_text: str) -> str:
+    def _markdown_to_basic_html(markdown_text: str, include_tables: bool = False) -> str:
         out: list[str] = []
         in_list = False
+        in_table = False
 
         def bold(s: str) -> str:
             return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
 
+        def close_blocks() -> None:
+            nonlocal in_list, in_table
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            if in_table:
+                out.append("</tbody></table>")
+                in_table = False
+
         for line in markdown_text.splitlines():
             s = line.strip()
-            if not s or s.startswith("|"):  # tables are re-created as sub-tasks
-                if in_list:
-                    out.append("</ul>")
-                    in_list = False
+            if not s:
+                close_blocks()
                 continue
+            if s.startswith("|"):
+                if not include_tables:
+                    close_blocks()
+                    continue
+                cells = [c.strip() for c in s.strip("|").split("|")]
+                if all(set(c) <= {"-", ":", " "} for c in cells if c):
+                    continue
+                if not in_table:
+                    out.append('<table class="table table-bordered"><thead><tr>' +
+                               "".join(f"<th>{bold(c)}</th>" for c in cells) + "</tr></thead><tbody>")
+                    in_table = True
+                else:
+                    out.append("<tr>" + "".join(f"<td>{bold(c)}</td>" for c in cells) + "</tr>")
+                continue
+            if in_table:
+                out.append("</tbody></table>")
+                in_table = False
             if s.startswith("## "):
-                if in_list:
-                    out.append("</ul>")
-                    in_list = False
+                close_blocks()
                 out.append(f"<h3>{s[3:]}</h3>")
             elif s.startswith(("- ", "* ")):
                 if not in_list:
@@ -239,13 +266,38 @@ class OdooMeetingClient:
                     in_list = True
                 out.append(f"<li>{bold(s[2:])}</li>")
             else:
-                if in_list:
-                    out.append("</ul>")
-                    in_list = False
+                close_blocks()
                 out.append(f"<p>{bold(s)}</p>")
-        if in_list:
-            out.append("</ul>")
+        close_blocks()
         return "\n".join(out)
+
+    # --- knowledge ----------------------------------------------------------------------------
+    def _ensure_knowledge_parent(self) -> int:
+        rows = self._execute(
+            "knowledge.article", "search_read",
+            [[["name", "=", self.knowledge_parent], ["parent_id", "=", False]]],
+            {"fields": ["id"], "limit": 1})
+        if rows:
+            return int(rows[0]["id"])
+        return int(self._execute("knowledge.article", "create", [{
+            "name": self.knowledge_parent,
+            "category": "workspace",
+            "internal_permission": "write",
+        }]))
+
+    def publish_to_knowledge(self, meeting_id: str, consolidated_markdown: str, participants: list[str]) -> int | None:
+        if not self.knowledge_parent:
+            return None
+        parent_id = self._ensure_knowledge_parent()
+        meeting_date = datetime.now().strftime("%Y-%m-%d")
+        title = f"{meeting_id} ({meeting_date})"
+        meta_html = f"<p><strong>Participants:</strong> {', '.join(participants)}</p>" if participants else ""
+        body_html = f"<h1>{title}</h1>\n{meta_html}\n{self._markdown_to_basic_html(consolidated_markdown, include_tables=True)}"
+        return int(self._execute("knowledge.article", "create", [{
+            "name": title,
+            "parent_id": parent_id,
+            "body": body_html,
+        }]))
 
     # --- publish -------------------------------------------------------------------------------
     def publish_meeting_with_subtasks(self, meeting_id: str, consolidated_markdown: str,
@@ -285,7 +337,15 @@ class OdooMeetingClient:
             sub_id = int(self._execute("project.task", "create", [vals]))
             subtasks.append({"subtask_id": sub_id, "owner": item.owner, "odoo_user_id": owner_uid,
                              "task": item.task, "deadline": deadline})
+        article_id = None
+        if self.knowledge_parent:
+            try:
+                article_id = self.publish_to_knowledge(meeting_id, consolidated_markdown, participants)
+            except Exception as e:
+                logger.warning("Odoo Knowledge publish skipped: %s", e)
+
         return {"status": "published", "parent_task_id": parent_task_id,
+                "knowledge_article_id": article_id,
                 "speaker_user_map": speaker_user_map, "subtasks": subtasks}
 
     def publish_or_save(self, meeting_id: str, markdown: str, participants: list[str], out_dir: Path,

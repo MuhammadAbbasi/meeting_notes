@@ -80,7 +80,7 @@ sends nothing.
   - `GET /dashboard` → HTML admin page.
   - `GET /api/settings` → `{"values":{<key>:<value>}, "version":int, "status":{...}}`. Keys (see
     `server/settings.py` `FIELDS`): `transcriber, whisperlive_url, whisper_model, ollama_url,
-    ollama_model, odoo_url, odoo_db, odoo_user, odoo_api_key, odoo_project_id, speaker_aliases,
+    ollama_model, odoo_url, odoo_db, odoo_user, odoo_api_key, odoo_project_id, odoo_knowledge_parent, speaker_aliases,
     dedup_hold_s, dedup_window_s, dedup_similarity, noise_floor_rms, default_meeting, default_language`.
     Secrets are returned as booleans (set / not set). `status`: `transcriber_reachable,
     llm_reachable, llm_models[], llm_model_pulled, odoo_configured, odoo_reachable, data_dir,

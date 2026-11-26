@@ -22,6 +22,7 @@ FIELDS: dict[str, tuple[str, Any, Any]] = {
     "odoo_user": ("ODOO_USER", "", str),
     "odoo_api_key": ("ODOO_API_KEY", "", "secret"),
     "odoo_project_id": ("ODOO_PROJECT_ID", None, int),
+    "odoo_knowledge_parent": ("ODOO_KNOWLEDGE_PARENT", "Meeting Notes", str),
     "speaker_aliases": ("SPEAKER_ALIASES", {}, dict),
     "dedup_hold_s": ("DEDUP_HOLD_S", 2.5, float),
     "dedup_window_s": ("DEDUP_WINDOW_S", 2.0, float),

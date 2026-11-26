@@ -148,3 +148,26 @@ def test_fetch_upcoming_events_and_projects():
     assert evs[0]["meeting_id"] == f"{expected_dt}_Mazara-Sync"
     assert evs[0]["project_id"] == 81 and evs[0]["project_name"] == "A176LAB Gestione"
     assert evs[0]["attendees"] == ["Muhammad Abbasi"]
+
+
+def test_publish_creates_knowledge_article_under_meeting_notes():
+    c = OdooMeetingClient(url="http://odoo", db="db", username="u", api_key="k", knowledge_parent="Meeting Notes")
+    created = []
+
+    def fake_exec(model, method, args, kwargs=None):
+        if (model, method) == ("res.users", "search_read"):
+            return USERS
+        if (model, method) == ("knowledge.article", "search_read"):
+            return [{"id": 251}]
+        if method == "create":
+            created.append((model, args[0]))
+            return 500 + len(created)
+        raise AssertionError((model, method))
+
+    c._execute = fake_exec
+    r = c.publish_meeting_with_subtasks("2026-11-26_1230_Sync", NOISY_MD, ["Muhammad"])
+    assert r["knowledge_article_id"] == 506
+    k_articles = [vals for model, vals in created if model == "knowledge.article"]
+    assert len(k_articles) == 1
+    assert k_articles[0]["parent_id"] == 251
+    assert "<table" in k_articles[0]["body"] and "Export the VCOM data" in k_articles[0]["body"]

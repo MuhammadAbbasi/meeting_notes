@@ -402,6 +402,7 @@ dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2
             <div class="tf"><input name="odoo_api_key" id="f-dk" type="password" placeholder=" " autocomplete="new-password"><label for="f-dk">API key</label><div class="help" id="key-help">Odoo, Preferences, Account security, New API key</div></div>
             <div class="tf"><input name="odoo_project_id" id="f-dp" type="number" min="1" list="odoo-projects" placeholder=" "><label for="f-dp">Project ID</label><div class="help">Pick a project or type the number after /project/ in Odoo</div></div>
             <datalist id="odoo-projects"></datalist>
+            <div class="tf"><input name="odoo_knowledge_parent" id="f-dkp" placeholder=" "><label for="f-dkp">Knowledge section</label><div class="help">Parent article in Odoo Knowledge (e.g. Meeting Notes). Leave empty to skip.</div></div>
             <div class="tf full"><textarea name="speaker_aliases" id="f-da" placeholder=" "></textarea><label for="f-da">Names that differ in Odoo (optional)</label>
               <div class="help">One per line, caption name = Odoo name. For example: Ginadomenico = Gian Domenico Bianchi</div></div>
           </div>
@@ -842,7 +843,7 @@ function formValues() {
 }
 const LABELS = { transcriber: "mode", whisperlive_url: "recognition address", whisper_model: "speech model", ollama_url: "Ollama address",
   ollama_model: "minutes model", odoo_url: "Odoo address", odoo_db: "Odoo database", odoo_user: "Odoo user", odoo_api_key: "Odoo API key",
-  odoo_project_id: "Odoo project", speaker_aliases: "names in Odoo", dedup_hold_s: "wait before showing", dedup_window_s: "same sentence within",
+  odoo_project_id: "Odoo project", odoo_knowledge_parent: "Knowledge section", speaker_aliases: "names in Odoo", dedup_hold_s: "wait before showing", dedup_window_s: "same sentence within",
   dedup_similarity: "how similar", noise_floor_rms: "background noise level", partial_commit_s: "finish a sentence after silence", same_room_ratio: "same-room echo filter", default_meeting: "meeting name", default_language: "language" };
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 function setField(k, v) {

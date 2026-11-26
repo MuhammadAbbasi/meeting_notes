@@ -65,10 +65,12 @@ def admin(cred: HTTPBasicCredentials | None = Depends(_basic)) -> None:
 
 
 def odoo_client(**overrides) -> OdooMeetingClient:
-    v = {k: S.get(k) for k in ("odoo_url", "odoo_db", "odoo_user", "odoo_api_key", "odoo_project_id", "speaker_aliases")}
+    v = {k: S.get(k) for k in ("odoo_url", "odoo_db", "odoo_user", "odoo_api_key", "odoo_project_id",
+                               "odoo_knowledge_parent", "speaker_aliases")}
     v.update({k: x for k, x in overrides.items() if k in v and x not in (None, "")})
     return OdooMeetingClient(url=v["odoo_url"], db=v["odoo_db"], username=v["odoo_user"], api_key=v["odoo_api_key"],
-                             project_id=v["odoo_project_id"], speaker_aliases=v["speaker_aliases"])
+                             project_id=v["odoo_project_id"], knowledge_parent=v["odoo_knowledge_parent"],
+                             speaker_aliases=v["speaker_aliases"])
 
 
 def get_room(meeting_id: str) -> MeetingRoom:
