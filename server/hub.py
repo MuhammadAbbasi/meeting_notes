@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import time
 import urllib.request
@@ -24,7 +25,7 @@ from collections import deque
 
 from server.deduplicator import CrossTalkFilter, is_room_noise, normalize_text
 from server.docker_api import restart_container
-from server.meeting import MEETING_ID_RE, SPEAKER_RE, MeetingRoom, StreamClock, caption_frame
+from server.meeting import MEETING_ID_RE, SPEAKER_RE, AudioRecorder, MeetingRoom, StreamClock, caption_frame
 from server.odoo_client import OdooMeetingClient
 from server.ollama_synthesizer import SynthesisUnavailable, synthesize, transcript_markdown
 from server.settings import FIELDS, Settings
@@ -641,7 +642,7 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
             if wait > 0 and pending and time.monotonic() - pending["since"] >= wait:
                 commit_pending()
 
-    transcriber = committer = None
+    transcriber = committer = recorder = None
     try:
         try:
             transcriber = make_transcriber(meeting_id, speaker, lang, kind=S.get("transcriber"),
@@ -650,6 +651,8 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
         except TranscriberUnavailable as e:
             await ws.send_json({"type": "error", "message": str(e)})
             return
+        safe_sp = re.sub(r"[^A-Za-z0-9_.-]+", "_", speaker).strip("_") or "speaker"
+        recorder = AudioRecorder(DATA_DIR / "audio" / meeting_id / f"{safe_sp}.wav")
         committer = asyncio.create_task(commit_stalled())
         await ws.send_json({"type": "ready", "meeting_id": meeting_id, "speaker": speaker,
                             "transcriber": transcriber.kind})
@@ -665,6 +668,7 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
                 except ValueError as e:
                     log.warning("%s/%s: dropped frame: %s", meeting_id, speaker, e)
                     continue
+                recorder.write(msg["bytes"])
                 await transcriber.feed(msg["bytes"])
             elif msg.get("text"):
                 try:
@@ -679,6 +683,8 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
     finally:
         if committer is not None:
             committer.cancel()
+        if recorder is not None:
+            recorder.close()
         if transcriber is not None:
             await transcriber.close()
         commit_pending()  # the last sentence of someone who leaves is kept, not lost

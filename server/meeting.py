@@ -6,6 +6,7 @@ import bisect
 import json
 import re
 import time
+import wave
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,29 @@ from server.transcriber import Segment
 MEETING_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 SPEAKER_RE = re.compile(r"[A-Za-z0-9 _.-]{1,40}")
 CAPTION_FIELDS = ("speaker", "text", "start", "end", "ts", "rms")
+
+
+class AudioRecorder:
+    """Appends 16 kHz float32 mono PCM chunks to a 16-bit WAV file for replay/re-transcription."""
+
+    def __init__(self, path: Path, sample_rate: int = 16000) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._wav = wave.open(str(self.path), "wb")
+        self._wav.setnchannels(1)
+        self._wav.setsampwidth(2)
+        self._wav.setframerate(sample_rate)
+
+    def write(self, pcm_f32: bytes) -> None:
+        samples = np.frombuffer(pcm_f32, dtype=np.float32)
+        pcm_i16 = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2")
+        self._wav.writeframes(pcm_i16.tobytes())
+
+    def close(self) -> None:
+        try:
+            self._wav.close()
+        except Exception:
+            pass
 
 
 class StreamClock:

@@ -568,3 +568,16 @@ def test_finalize_passes_project_and_attendees_override(client, monkeypatch):
     r = client.post("/api/meetings/daily/finalize", json={"project_id": 81, "attendees": ["Pietro Artale"]})
     assert r.status_code == 200
     assert captured == {"meeting_id": "daily", "project_id": 81, "attendees": ["Pietro Artale"]}
+
+
+def test_audio_recording_saved_as_wav(client):
+    import wave
+    with client.websocket_connect("/ws/rec-test/Muhammad") as ws:
+        next_of(ws, "ready")
+        ws.send_bytes(pcm(2.0, 0.1))
+        next_of(ws, "caption", completed=True)
+    wav_path = client.tmp / "audio" / "rec-test" / "Muhammad.wav"
+    assert wav_path.exists()
+    with wave.open(str(wav_path), "rb") as w:
+        assert w.getnchannels() == 1 and w.getsampwidth() == 2 and w.getframerate() == 16000
+        assert w.getnframes() == 32000

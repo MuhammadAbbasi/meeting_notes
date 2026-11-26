@@ -134,6 +134,8 @@ the others.
 
 `data/meetings/{meeting_id}.jsonl` – one JSON object per completed caption (same fields
 as 1.3), append-only.
+`data/meetings/audio/{meeting_id}/{speaker}.wav` – per-speaker 16 kHz 16-bit mono PCM
+recording of each stream, saved for replay or re-transcription.
 
 ## 2. Hub ↔ WhisperLive (verified against collabora/WhisperLive main, 2026-11-23)
 

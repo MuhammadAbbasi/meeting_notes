@@ -5,25 +5,30 @@ import json
 import re
 import urllib.error
 import urllib.request
+from datetime import datetime
 
 SECTIONS = ["## Executive Summary", "## Consolidated Discussion by Topic", "## Key Decisions", "## Action Items"]
 LANG_NAMES = {"it": "Italian", "en": "English", "de": "German", "fr": "French", "es": "Spanish"}
 
-SYSTEM_PROMPT = """You are the minute-taker of an engineering team meeting (photovoltaic plant operations).
+SYSTEM_PROMPT = """You are the executive minute-taker of an engineering team meeting.
 You receive a time-ordered transcript where each line is `[Speaker] text`. Speech-to-text noise
-(misspellings, split words, mixed Italian/English) is expected: interpret charitably, never invent facts.
-Write the minutes in the language most used in the transcript.
+(misspellings, repeated filler syllables, mixed Italian/English) is expected: interpret charitably,
+ignore filler/noise, and NEVER invent facts.
 
 Rules:
-1. Map every distinct speaker's arguments, concerns and proposals. Keep minority viewpoints.
-2. Merge overlapping points from different participants into unified topic threads, attributing
-   with [Speaker Name] in square brackets.
-3. Output ONLY Markdown with exactly these sections, in this order:
+1. NEVER copy-paste or quote the raw transcript verbatim. Synthesize and summarize into concise,
+   well-structured prose and bullet points.
+2. Group discussion by clear topic headings (`- **Topic**: concise summary [Speaker]`). Map every
+   speaker's arguments, concerns, and proposals, keeping minority viewpoints.
+3. Write the entire document (summary, topics, decisions, action items) in the specified meeting
+   language (keeping the four Markdown section headings exact).
+4. Resolve relative deadlines ("next week", "prossima settimana", "next month") using Today's Date.
+5. Output ONLY Markdown with these four sections, in this exact order:
 ## Executive Summary
 ## Consolidated Discussion by Topic
 ## Key Decisions
 ## Action Items
-4. `## Action Items` is a Markdown table with header `| Owner | Task | Deadline |`. Owner is a
+6. `## Action Items` is a Markdown table with header `| Owner | Task | Deadline |`. Owner is a
    speaker name from the transcript (or `Unassigned`). Deadline is YYYY-MM-DD or empty.
 No preamble, no closing remarks, no code fences."""
 
@@ -47,11 +52,12 @@ def transcript_markdown(segments: list[dict]) -> str:
 
 def build_messages(segments: list[dict], meeting_id: str, language: str = "it") -> list[dict]:
     speakers = sorted({s["speaker"] for s in segments})
-    lang_hint = (f"Language: {LANG_NAMES.get(language, language)} ({language}). "
-                 f"Write the minutes in {LANG_NAMES.get(language, language)} unless the transcript is clearly in another language.\n"
+    today = datetime.now().strftime("%Y-%m-%d")
+    lang_label = LANG_NAMES.get(language, language)
+    lang_hint = (f"Target Language: {lang_label} ({language}). Write ALL content in {lang_label}.\n"
                  if language and language != "auto" else "")
-    user = (f"Meeting id: {meeting_id}\n{lang_hint}Participants: {', '.join(speakers)}\n\nTranscript:\n"
-            + "\n".join(transcript_lines(segments)))
+    user = (f"Today's Date: {today}\nMeeting id: {meeting_id}\n{lang_hint}"
+            f"Participants: {', '.join(speakers)}\n\nTranscript:\n" + "\n".join(transcript_lines(segments)))
     return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]
 
 
