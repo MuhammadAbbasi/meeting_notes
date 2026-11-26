@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 
 SECTIONS = ["## Executive Summary", "## Consolidated Discussion by Topic", "## Key Decisions", "## Action Items"]
+LANG_NAMES = {"it": "Italian", "en": "English", "de": "German", "fr": "French", "es": "Spanish"}
 
 SYSTEM_PROMPT = """You are the minute-taker of an engineering team meeting (photovoltaic plant operations).
 You receive a time-ordered transcript where each line is `[Speaker] text`. Speech-to-text noise
@@ -44,9 +45,12 @@ def transcript_markdown(segments: list[dict]) -> str:
     return f"## Transcript\n\n{body}\n"
 
 
-def build_messages(segments: list[dict], meeting_id: str) -> list[dict]:
+def build_messages(segments: list[dict], meeting_id: str, language: str = "it") -> list[dict]:
     speakers = sorted({s["speaker"] for s in segments})
-    user = (f"Meeting id: {meeting_id}\nParticipants: {', '.join(speakers)}\n\nTranscript:\n"
+    lang_hint = (f"Language: {LANG_NAMES.get(language, language)} ({language}). "
+                 f"Write the minutes in {LANG_NAMES.get(language, language)} unless the transcript is clearly in another language.\n"
+                 if language and language != "auto" else "")
+    user = (f"Meeting id: {meeting_id}\n{lang_hint}Participants: {', '.join(speakers)}\n\nTranscript:\n"
             + "\n".join(transcript_lines(segments)))
     return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]
 
@@ -59,8 +63,9 @@ def clean_response(text: str) -> str:
     return text.strip() + "\n"
 
 
-def synthesize(segments: list[dict], meeting_id: str, url: str, model: str, timeout: float = 300) -> str:
-    payload = {"model": model, "messages": build_messages(segments, meeting_id), "stream": False,
+def synthesize(segments: list[dict], meeting_id: str, url: str, model: str, timeout: float = 300,
+               language: str = "it") -> str:
+    payload = {"model": model, "messages": build_messages(segments, meeting_id, language=language), "stream": False,
                "options": {"temperature": 0.2, "num_ctx": 16384}}  # explicit ctx: Ollama otherwise reserves the model max (KV cache of many GB)
     req = urllib.request.Request(f"{url.rstrip('/')}/api/chat", data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"}, method="POST")

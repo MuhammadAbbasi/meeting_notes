@@ -497,19 +497,23 @@ async def finalize(meeting_id: str, request: Request) -> dict:
             return {"meeting_id": meeting_id, "markdown": md.read_text(encoding="utf-8"), "llm": rec["llm"],
                     "llm_error": rec.get("llm_error"), "saved_to": str(md), "odoo": rec["odoo"], "joined": True}
     async with lock:
-        return await _finalize(meeting_id, project_id=opts.get("project_id"), attendees=opts.get("attendees"))
+        return await _finalize(meeting_id, project_id=opts.get("project_id"),
+                               attendees=opts.get("attendees"), language=opts.get("language"))
 
 
-async def _finalize(meeting_id: str, project_id: int | None = None, attendees: list[str] | None = None) -> dict:
+async def _finalize(meeting_id: str, project_id: int | None = None, attendees: list[str] | None = None,
+                    language: str | None = None) -> dict:
     if _pending:  # flush in-flight hold-window captions so the final sentence isn't dropped
         await asyncio.gather(*list(_pending), return_exceptions=True)
     segs = MeetingRoom(meeting_id, DATA_DIR).history()
     if not segs:
         raise HTTPException(404, "no completed captions for this meeting")
     llm_error = None
+    lang = language or S.get("default_language") or "it"
     try:
         # 10 min: on a GPU shared with live recognition a long meeting took over the old 5 min (measured)
-        markdown = await asyncio.to_thread(synthesize, segs, meeting_id, S.get("ollama_url"), S.get("ollama_model"), 600)
+        markdown = await asyncio.to_thread(synthesize, segs, meeting_id, S.get("ollama_url"), S.get("ollama_model"), 600,
+                                           lang)
         llm = True
     except SynthesisUnavailable as e:
         log.warning("%s: %s; falling back to transcript", meeting_id, e)

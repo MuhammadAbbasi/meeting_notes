@@ -48,7 +48,7 @@ def fetch_calendar(server_ip: str, port: int, timeout: float = 3.0) -> list[dict
 
 
 def finalize(server_ip: str, port: int, meeting_id: str, project_id: int | None = None,
-             attendees: list[str] | None = None, timeout: float = 600) -> dict:
+             attendees: list[str] | None = None, language: str | None = None, timeout: float = 600) -> dict:
     """POST /finalize; blocking (Ollama can take minutes). Returns the hub's JSON or {"error": str}."""
     import urllib.error
     import urllib.request
@@ -58,6 +58,8 @@ def finalize(server_ip: str, port: int, meeting_id: str, project_id: int | None 
         payload["project_id"] = project_id
     if attendees is not None:
         payload["attendees"] = attendees
+    if language:
+        payload["language"] = language
     body = json.dumps(payload).encode("utf-8") if payload else b""
     headers = {"Content-Type": "application/json"} if payload else {}
     req = urllib.request.Request(f"http://{server_ip}:{port}/api/meetings/{meeting_id}/finalize",

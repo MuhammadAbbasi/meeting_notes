@@ -168,6 +168,7 @@ class Agent:
     def finalize(self, quit_after: bool = False) -> None:
         """Stop streaming, flush audio, and ask the hub for minutes + Odoo push."""
         mid = self.cfg["meeting_id"]
+        lang = self.cfg.get("language", "it")
         meta = dict(self._meeting_meta)
         self.stop()
 
@@ -175,7 +176,8 @@ class Agent:
             self.overlay.set_status("Writing minutes… this takes one to three minutes")
             r = finalize(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), mid,
                          project_id=meta.get("project_id"),
-                         attendees=meta.get("attendees"))
+                         attendees=meta.get("attendees"),
+                         language=lang)
             if "error" in r:
                 self.overlay.set_status(f"Couldn't write the minutes: {r['error']}")
             else:
@@ -210,8 +212,10 @@ class Agent:
             meetings = fetch_calendar(self.cfg["server_ip"], self.cfg.get("hub_port", 8085))
 
             def on_tk():
-                new = ask_meeting(self.overlay.root, self.cfg["meeting_id"], meetings)
-                if new and MEETING_ID_RE.fullmatch(new):
+                picked = ask_meeting(self.overlay.root, self.cfg["meeting_id"], meetings,
+                                     current_lang=self.cfg.get("language", "it"))
+                if picked and MEETING_ID_RE.fullmatch(picked[0]):
+                    new, lang = picked
                     if self.running:
                         choice = ask_end_meeting(self.overlay.root, self.cfg["meeting_id"], "manual")
                         if choice == "cancel":
@@ -221,6 +225,7 @@ class Agent:
                         else:
                             self.stop()
                     self.cfg["meeting_id"] = new
+                    self.cfg["language"] = lang
                     save_config(self.cfg)
                     self.start()
             self.overlay.call(on_tk)

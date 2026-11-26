@@ -198,8 +198,9 @@ def _format_meeting_choice(m: dict) -> str:
     return f"{m['meeting_id']}  —  {title}" + (f" ({', '.join(extra)})" if extra else "")
 
 
-def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = None) -> str | None:
-    """Google-styled meeting switcher with Odoo calendar + live rooms; returns the new meeting_id or None."""
+def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = None,
+                current_lang: str = "it") -> tuple[str, str] | None:
+    """Google-styled meeting switcher with Odoo calendar + language; returns (meeting_id, language) or None."""
     win = tk.Toplevel(parent)
     win.title("Change meeting")
     win.configure(bg=BG, padx=24, pady=18)
@@ -216,6 +217,10 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
         entry = cb
     else:
         var, entry = _entry(win, current)
+    _label(win, "Meeting language", 9, MUTED, pady=(10, 0))
+    lang_names = [n for n, _ in LANGUAGES]
+    lang_var = tk.StringVar(value=next((n for n, c in LANGUAGES if c == current_lang), "Italian"))
+    ttk.Combobox(win, textvariable=lang_var, values=lang_names, state="readonly", font=(FONT, 11)).pack(fill="x", pady=(4, 0), ipady=3)
     err = tk.Label(win, text="", bg=BG, fg=ERROR, font=(FONT, 9), anchor="w")
     err.pack(fill="x", pady=(6, 0))
     out: dict = {}
@@ -226,6 +231,7 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
             err.configure(text="Letters, digits, - and _ only, without spaces.")
             return
         out["v"] = v
+        out["lang"] = dict(LANGUAGES)[lang_var.get()]
         win.destroy()
 
     btns = tk.Frame(win, bg=BG)
@@ -238,7 +244,8 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
     win.grab_set()
     parent.wait_window(win)
     v = out.get("v")
-    return v if v and v != current else None
+    lang = out.get("lang", current_lang)
+    return (v, lang) if v and (v != current or lang != current_lang) else None
 
 
 def ask_end_meeting(parent: tk.Misc, meeting_id: str, reason: str = "manual") -> str:
