@@ -49,6 +49,7 @@ rooms: dict[str, MeetingRoom] = {}
 _pending: set[asyncio.Task] = set()  # keeps hold-window tasks alive
 _finalizing: dict[str, asyncio.Lock] = {}  # one minutes run per meeting, however many people press the button
 _summary_cache: dict[str, tuple[tuple, dict]] = {}  # meeting_id -> (file stats, summary)
+_calendar_meta: dict[str, dict] = {}  # meeting_id -> {project_id, attendees} from Odoo calendar
 _basic = HTTPBasic(auto_error=False)  # no WWW-Authenticate: the page has its own login form, browsers never prompt
 
 
@@ -285,6 +286,45 @@ async def whisperlive_restart() -> dict:
     return {"message": await asyncio.to_thread(_apply_whisper_model, S.get("whisper_model"))}
 
 
+@app.get("/api/odoo/projects", dependencies=[Depends(admin)])
+async def odoo_projects() -> dict:
+    client = odoo_client()
+    if not client.is_configured:
+        return {"projects": []}
+    try:
+        return {"projects": await asyncio.to_thread(client.fetch_projects)}
+    except Exception:
+        return {"projects": []}
+
+
+@app.get("/api/calendar")
+async def calendar() -> dict:
+    """Today's Odoo calendar events merged with any live rooms (never fails if Odoo is unreachable)."""
+    events: list[dict] = []
+    client = odoo_client()
+    if client.is_configured:
+        try:
+            events = await asyncio.to_thread(client.fetch_upcoming_events)
+        except Exception as e:
+            log.warning("calendar fetch failed: %s", e)
+    seen: set[str] = set()
+    out: list[dict] = []
+    for ev in events:
+        mid = ev["meeting_id"]
+        if mid in seen:
+            continue
+        seen.add(mid)
+        _calendar_meta[mid] = {"project_id": ev.get("project_id"), "attendees": ev.get("attendees") or []}
+        room = rooms.get(mid)
+        out.append({**ev, "live_speakers": sorted(room.speakers) if room else []})
+    for mid, room in sorted(rooms.items()):
+        if mid not in seen:
+            out.append({"meeting_id": mid, "title": mid, "start": None, "stop": None,
+                        "project_id": None, "project_name": None, "attendees": [],
+                        "live_speakers": sorted(room.speakers)})
+    return {"meetings": out}
+
+
 # --- workstation agent distribution ----------------------------------------------------------
 
 @app.put("/api/agent/exe", dependencies=[Depends(admin)])
@@ -441,9 +481,11 @@ async def minutes(meeting_id: str) -> str:
 
 
 @app.post("/api/meetings/{meeting_id}/finalize")
-async def finalize(meeting_id: str) -> dict:
+async def finalize(meeting_id: str, request: Request) -> dict:
     """Write the minutes once per press; presses that arrive while a run is going join that run's result."""
     _valid_id(meeting_id)
+    raw = await request.body()
+    opts = json.loads(raw) if raw.strip() else {}
     lock = _finalizing.setdefault(meeting_id, asyncio.Lock())
     if lock.locked():
         async with lock:  # someone else is already writing these minutes: wait for them
@@ -455,10 +497,12 @@ async def finalize(meeting_id: str) -> dict:
             return {"meeting_id": meeting_id, "markdown": md.read_text(encoding="utf-8"), "llm": rec["llm"],
                     "llm_error": rec.get("llm_error"), "saved_to": str(md), "odoo": rec["odoo"], "joined": True}
     async with lock:
-        return await _finalize(meeting_id)
+        return await _finalize(meeting_id, project_id=opts.get("project_id"), attendees=opts.get("attendees"))
 
 
-async def _finalize(meeting_id: str) -> dict:
+async def _finalize(meeting_id: str, project_id: int | None = None, attendees: list[str] | None = None) -> dict:
+    if _pending:  # flush in-flight hold-window captions so the final sentence isn't dropped
+        await asyncio.gather(*list(_pending), return_exceptions=True)
     segs = MeetingRoom(meeting_id, DATA_DIR).history()
     if not segs:
         raise HTTPException(404, "no completed captions for this meeting")
@@ -471,7 +515,11 @@ async def _finalize(meeting_id: str) -> dict:
         log.warning("%s: %s; falling back to transcript", meeting_id, e)
         markdown, llm, llm_error = transcript_markdown(segs), False, str(e)
     participants = sorted({s["speaker"] for s in segs})
-    odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR)
+    meta = _calendar_meta.get(meeting_id, {})
+    target_project = project_id if project_id is not None else meta.get("project_id")
+    target_attendees = attendees if attendees is not None else meta.get("attendees")
+    odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR,
+                                   project_id=target_project, attendees=target_attendees)
     (DATA_DIR / f"{meeting_id}.finalize.json").write_text(
         json.dumps({"finalized_at": time.time(), "llm": llm, "llm_model": S.get("ollama_model"), "llm_error": llm_error,
                     "odoo": odoo}), encoding="utf-8")
@@ -510,6 +558,11 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
         await _close(ws, 1008)
         return
     room = get_room(meeting_id)
+    if speaker == "Remote-Call" and "Remote-Call" in room.speakers:
+        await ws.send_json({"type": "error", "code": "loopback_active",
+                            "message": "another computer is already captioning call audio in this meeting"})
+        await _close(ws, 4002)
+        return
     old = room.add_speaker(speaker, ws)
     if old is not None:
         # Newest connection wins: usually the same PC reconnecting after a network drop while the hub still

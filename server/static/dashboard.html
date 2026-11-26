@@ -400,7 +400,8 @@ dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2
             <div class="tf"><input name="odoo_db" id="f-dd" placeholder=" "><label for="f-dd">Database</label></div>
             <div class="tf"><input name="odoo_user" id="f-dn" placeholder=" "><label for="f-dn">User (login or email)</label></div>
             <div class="tf"><input name="odoo_api_key" id="f-dk" type="password" placeholder=" " autocomplete="new-password"><label for="f-dk">API key</label><div class="help" id="key-help">Odoo, Preferences, Account security, New API key</div></div>
-            <div class="tf"><input name="odoo_project_id" id="f-dp" type="number" min="1" placeholder=" "><label for="f-dp">Project ID</label><div class="help">The number after /project/ in the project's address in Odoo</div></div>
+            <div class="tf"><input name="odoo_project_id" id="f-dp" type="number" min="1" list="odoo-projects" placeholder=" "><label for="f-dp">Project ID</label><div class="help">Pick a project or type the number after /project/ in Odoo</div></div>
+            <datalist id="odoo-projects"></datalist>
             <div class="tf full"><textarea name="speaker_aliases" id="f-da" placeholder=" "></textarea><label for="f-da">Names that differ in Odoo (optional)</label>
               <div class="help">One per line, caption name = Odoo name. For example: Ginadomenico = Gian Domenico Bianchi</div></div>
           </div>
@@ -872,6 +873,15 @@ async function loadSettings() {
   $("#agent-sha").textContent = s.agent ? s.agent.sha256 : "no version uploaded yet";
   $("#ollama-models").innerHTML = s.llm_models.map(m => `<option value="${esc(m)}">`).join("");
   $("#llm-hint").textContent = s.llm_models.length ? `Installed: ${s.llm_models.slice(0, 6).join(", ")}${s.llm_models.length > 6 ? " and " + (s.llm_models.length - 6) + " more" : ""}` : "No model list: Ollama isn't answering";
+  if (s.odoo_configured) loadOdooProjects();
+}
+async function loadOdooProjects() {
+  try {
+    const r = await api("/api/odoo/projects");
+    $("#odoo-projects").replaceChildren(...(r.projects || []).map(p => {
+      const o = document.createElement("option"); o.value = p.id; o.label = `${p.id} · ${p.name}`; return o;
+    }));
+  } catch (e) {}
   if (dirty && prev !== undefined && prev !== current.version && !conflict) {
     let mine = {}; try { mine = myChanges(); } catch (e) {}
     const theirs = Object.keys(loaded).filter(k => !same(current.values[k], loaded[k]));

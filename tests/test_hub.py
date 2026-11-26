@@ -527,3 +527,44 @@ def test_same_room_echo_dropped_but_simultaneous_speakers_kept(monkeypatch, tmp_
             next_of(a, "caption", completed=True, speaker="Muhammad")
             next_of(a, "caption", completed=True, speaker="Gabriele")
         assert sorted(r["speaker"] for r in c.get("/api/meetings/both/segments").json()) == ["Gabriele", "Muhammad"]
+
+
+def test_remote_call_second_connection_rejected_with_4002(client):
+    with client.websocket_connect("/ws/daily/Remote-Call") as first:
+        next_of(first, "ready")
+        with client.websocket_connect("/ws/daily/Remote-Call") as second:
+            err = second.receive_json()
+            assert err["type"] == "error" and err["code"] == "loopback_active"
+            with pytest.raises(WebSocketDisconnect) as closed:
+                second.receive_json()
+            assert closed.value.code == 4002
+
+
+def test_calendar_and_odoo_projects_endpoints(client, monkeypatch):
+    assert client.get("/api/odoo/projects").status_code == 401
+    assert client.get("/api/odoo/projects", auth=("admin", "pw")).json() == {"projects": []}
+    with client.websocket_connect("/ws/live-room/Muhammad") as ws:
+        next_of(ws, "ready")
+        cal = client.get("/api/calendar").json()
+        assert cal["meetings"] == [{
+            "meeting_id": "live-room", "title": "live-room", "start": None, "stop": None,
+            "project_id": None, "project_name": None, "attendees": [], "live_speakers": ["Muhammad"],
+        }]
+
+
+def test_finalize_passes_project_and_attendees_override(client, monkeypatch):
+    with client.websocket_connect("/ws/daily/Pietro") as ws:
+        next_of(ws, "ready")
+        ws.send_bytes(pcm(2.0))
+        next_of(ws, "caption", completed=True)
+    captured = {}
+
+    class FakeOdoo:
+        def publish_or_save(self, meeting_id, markdown, participants, out_dir, project_id=None, attendees=None):
+            captured.update(meeting_id=meeting_id, project_id=project_id, attendees=attendees)
+            return {"status": "saved_locally", "path": str(out_dir / f"{meeting_id}.minutes.md")}
+
+    monkeypatch.setattr(client.hub, "odoo_client", lambda **kw: FakeOdoo())
+    r = client.post("/api/meetings/daily/finalize", json={"project_id": 81, "attendees": ["Pietro Artale"]})
+    assert r.status_code == 200
+    assert captured == {"meeting_id": "daily", "project_id": 81, "attendees": ["Pietro Artale"]}

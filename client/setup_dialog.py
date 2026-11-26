@@ -16,6 +16,19 @@ BLUE, INK, MUTED, LINE, ERROR, BG, HEAD = "#0B57D0", "#1F1F1F", "#444746", "#C4C
 FONT = "Segoe UI"
 
 
+def list_input_devices() -> list[tuple[int | str | None, str]]:
+    """Return [(device_index_or_None, label)] for the microphone dropdown."""
+    out: list[tuple[int | str | None, str]] = [(None, "System default microphone")]
+    try:
+        import sounddevice as sd
+        for idx, dev in enumerate(sd.query_devices()):
+            if dev.get("max_input_channels", 0) > 0:
+                out.append((idx, dev["name"]))
+    except Exception:
+        pass
+    return out
+
+
 def set_window_icon(win: tk.Misc) -> None:
     try:
         win.iconbitmap(default=str(ASSETS / "icon.ico"))
@@ -94,6 +107,14 @@ def ask_config(defaults: dict) -> dict | None:
     lang_var = tk.StringVar(value=next((n for n, c in LANGUAGES if c == code), "Italian"))
     ttk.Combobox(lang_box, textvariable=lang_var, values=names, state="readonly", font=(FONT, 11)).pack(fill="x", pady=(4, 0), ipady=3)
 
+    devices = list_input_devices()
+    dev_labels = [lbl for _, lbl in devices]
+    cur_dev = defaults.get("input_device")
+    cur_dev_lbl = next((lbl for idx, lbl in devices if idx == cur_dev), dev_labels[0])
+    mic_box = section("Microphone", "Pick a headset or desk mic, or leave on system default.")
+    mic_var = tk.StringVar(value=cur_dev_lbl)
+    ttk.Combobox(mic_box, textvariable=mic_var, values=dev_labels, state="readonly", font=(FONT, 11)).pack(fill="x", pady=(4, 0), ipady=3)
+
     calls = tk.Frame(body, bg=BG)
     calls.pack(fill="x", pady=(16, 0))
     loop_var = tk.BooleanVar(value=bool(defaults.get("capture_system_audio", False)))
@@ -144,8 +165,9 @@ def ask_config(defaults: dict) -> dict | None:
         if not ip_var.get().strip():
             error.configure(text="The hub address is empty. Open Advanced and type the address the admin gave you.")
             return
+        dev_id = next((idx for idx, lbl in devices if lbl == mic_var.get()), None)
         result.update(dict(defaults, user_name=name, meeting_id=meeting, server_ip=ip_var.get().strip(), hub_port=port,
-                           language=dict(LANGUAGES)[lang_var.get()], capture_system_audio=loop_var.get()))
+                           input_device=dev_id, language=dict(LANGUAGES)[lang_var.get()], capture_system_audio=loop_var.get()))
         root.destroy()
 
     btns = tk.Frame(root, bg=BG, padx=24, pady=16)
@@ -162,8 +184,18 @@ def ask_config(defaults: dict) -> dict | None:
     return result or None
 
 
-def ask_meeting(parent: tk.Misc, current: str) -> str | None:
-    """Small window to switch meeting; returns the new name or None."""
+def _format_meeting_choice(m: dict) -> str:
+    title = m.get("title") or m["meeting_id"]
+    extra = []
+    if m.get("start"):
+        extra.append(m["start"][11:16])
+    if m.get("live_speakers"):
+        extra.append(f"{len(m['live_speakers'])} live")
+    return f"{m['meeting_id']}  —  {title}" + (f" ({', '.join(extra)})" if extra else "")
+
+
+def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = None) -> str | None:
+    """Google-styled meeting switcher with Odoo calendar + live rooms; returns the new meeting_id or None."""
     win = tk.Toplevel(parent)
     win.title("Change meeting")
     win.configure(bg=BG, padx=24, pady=18)
@@ -171,14 +203,21 @@ def ask_meeting(parent: tk.Misc, current: str) -> str | None:
     win.attributes("-topmost", True)
     set_window_icon(win)
     _label(win, "Change meeting", 13, bold=True)
-    _label(win, "Everyone who uses the same meeting name sees each other's captions.", 9, MUTED, pady=(2, 0))
-    var, entry = _entry(win, current)
+    _label(win, "Pick a scheduled Odoo meeting or type a meeting name.", 9, MUTED, pady=(2, 6))
+    choices = [_format_meeting_choice(m) for m in (meetings or [])]
+    var = tk.StringVar(value=current)
+    if choices:
+        cb = ttk.Combobox(win, textvariable=var, values=choices, font=(FONT, 11))
+        cb.pack(fill="x", ipady=4, pady=(4, 0))
+        entry = cb
+    else:
+        var, entry = _entry(win, current)
     err = tk.Label(win, text="", bg=BG, fg=ERROR, font=(FONT, 9), anchor="w")
     err.pack(fill="x", pady=(6, 0))
     out: dict = {}
 
     def ok(_=None):
-        v = var.get().strip()
+        v = var.get().split("  —  ", 1)[0].strip()
         if not MEETING_RE.fullmatch(v):
             err.configure(text="Letters, digits, - and _ only, without spaces.")
             return
@@ -192,8 +231,41 @@ def ask_meeting(parent: tk.Misc, current: str) -> str | None:
     win.bind("<Return>", ok)
     win.bind("<Escape>", lambda e: win.destroy())
     entry.focus_set()
-    entry.select_range(0, "end")
     win.grab_set()
     parent.wait_window(win)
     v = out.get("v")
     return v if v and v != current else None
+
+
+def ask_end_meeting(parent: tk.Misc, meeting_id: str, reason: str = "manual") -> str:
+    """Confirm stopping the tool and generating meeting notes. Returns 'finalize', 'stop', or 'cancel'."""
+    reasons = {
+        "empty": "Everyone else has left this meeting.",
+        "idle": "No speech has been detected for 10 minutes.",
+        "scheduled": "The scheduled meeting time in Odoo has ended.",
+    }
+    win = tk.Toplevel(parent)
+    win.title("End meeting")
+    win.configure(bg=BG, padx=24, pady=20)
+    win.resizable(False, False)
+    win.attributes("-topmost", True)
+    set_window_icon(win)
+    _label(win, f"End meeting “{meeting_id}”?", 13, bold=True)
+    msg = (f"{reasons[reason]} " if reason in reasons else "") + "Do you want to stop the tool and generate meeting notes?"
+    _label(win, msg, 10, MUTED, pady=(6, 4))
+    out = {"choice": "cancel"}
+
+    def pick(choice: str):
+        out["choice"] = choice
+        win.destroy()
+
+    btns = tk.Frame(win, bg=BG)
+    btns.pack(fill="x", pady=(14, 0))
+    _button(btns, "Stop & generate", lambda: pick("finalize"), True).pack(side="right")
+    _button(btns, "Stop only", lambda: pick("stop"), False).pack(side="right", padx=(0, 6))
+    _button(btns, "Cancel", lambda: pick("cancel"), False).pack(side="right", padx=(0, 6))
+    win.bind("<Return>", lambda e: pick("finalize"))
+    win.bind("<Escape>", lambda e: pick("cancel"))
+    win.grab_set()
+    parent.wait_window(win)
+    return out["choice"]

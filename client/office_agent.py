@@ -5,14 +5,18 @@ from __future__ import annotations
 import json
 import logging
 import re
+import socket
 import sys
 import threading
+import time
+import webbrowser
+from datetime import datetime, timezone
 from pathlib import Path
 
 from audio_capture import LoopbackCapture, MicCapture
-from hub_link import HubLink, finalize, friendly_state, speaker_url
+from hub_link import HubLink, fetch_calendar, finalize, friendly_state, speaker_url
 from overlay_ui import CaptionOverlay
-from setup_dialog import ask_config, ask_meeting
+from setup_dialog import ask_config, ask_end_meeting, ask_meeting
 from tray import Tray
 
 HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))  # bundled resources when frozen
@@ -46,12 +50,18 @@ class Agent:
         self.cfg = cfg
         self.audio = MicCapture(device=cfg.get("input_device"))
         self.loop_audio = LoopbackCapture() if cfg.get("capture_system_audio") else None
-        self.overlay = CaptionOverlay(on_pause=self.set_paused, on_finalize=self.finalize,
+        self.overlay = CaptionOverlay(on_pause=self.set_paused, on_finalize=lambda: self.prompt_end_meeting("manual"),
                                       alpha=cfg.get("overlay_alpha", 0.5))
         self.tray = Tray(self)
         self.link: HubLink | None = None
         self.loop_link: HubLink | None = None
         self.paused = False
+        self._meeting_meta: dict = {}
+        self._last_activity = time.monotonic()
+        self._had_others = False
+        self._solo_since: float | None = None
+        self._end_prompted = False
+        self.overlay.root.after(30000, self._watch_end)
 
     @property
     def running(self) -> bool:
@@ -65,11 +75,63 @@ class Agent:
         self.overlay.set_status(friendly_state(state, self.cfg["meeting_id"], self.paused))
         self.tray.set_state("paused" if state == "connected" and self.paused else state)
 
+    def _base_http(self) -> str:
+        return f"http://{self.cfg['server_ip']}:{self.cfg.get('hub_port', 8085)}"
+
+    def open_url(self, target: str) -> None:
+        mid = self.cfg["meeting_id"]
+        path = f"/captions/{mid}" if target == "captions" else "/dashboard"
+        webbrowser.open(self._base_http() + path)
+
+    def _refresh_calendar_meta(self) -> None:
+        def work():
+            for m in fetch_calendar(self.cfg["server_ip"], self.cfg.get("hub_port", 8085)):
+                if m.get("meeting_id") == self.cfg["meeting_id"]:
+                    self._meeting_meta = m
+                    return
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_hub_message(self, frame: dict) -> None:
+        self.overlay.push(frame)
+        t = frame.get("type")
+        if t == "caption":
+            self._last_activity = time.monotonic()
+        elif t == "roster":
+            others = [s for s in frame.get("speakers", []) if s not in {self.cfg["user_name"], "Remote-Call"}]
+            if others:
+                self._had_others, self._solo_since = True, None
+            elif self._had_others and self._solo_since is None:
+                self._solo_since = time.monotonic()
+
+    def _watch_end(self) -> None:
+        if self.running and not self.paused and not self._end_prompted:
+            now = time.monotonic()
+            reason = None
+            if self._solo_since is not None and now - self._solo_since >= 60:
+                reason = "empty"
+            elif now - self._last_activity >= 600:
+                reason = "idle"
+            elif self._meeting_meta.get("stop"):
+                try:
+                    stop_dt = datetime.strptime(self._meeting_meta["stop"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc).timestamp() - stop_dt.timestamp() >= 120:
+                        reason = "scheduled"
+                except ValueError:
+                    pass
+            if reason:
+                self._end_prompted = True
+                self.prompt_end_meeting(reason)
+        self.overlay.root.after(30000, self._watch_end)
+
     def start(self) -> None:
         if self.running:
             return
+        self._last_activity = time.monotonic()
+        self._had_others, self._solo_since, self._end_prompted = False, None, False
+        self._meeting_meta = {}
+        self._refresh_calendar_meta()
         self.audio.start()
-        self.link = HubLink(self._url(self.cfg["user_name"]), self.audio, self.overlay.push, self._on_state)
+        self.link = HubLink(self._url(self.cfg["user_name"]), self.audio, self._on_hub_message, self._on_state)
         threading.Thread(target=self.link.run, daemon=True).start()
         if self.loop_audio is not None and self.loop_audio.start():
             self.loop_link = HubLink(self._url("Remote-Call"), self.loop_audio, lambda m: None)
@@ -101,28 +163,63 @@ class Agent:
         if self.running:
             self.tray.set_state("paused" if paused else "connected")
 
-    def finalize(self) -> None:
-        """Ask the hub for minutes + Odoo push; runs in a thread, result shown in the status line."""
+    def finalize(self, quit_after: bool = False) -> None:
+        """Stop streaming, flush audio, and ask the hub for minutes + Odoo push."""
+        self.stop()
+
         def work():
             self.overlay.set_status("Writing minutes… this takes one to three minutes")
-            r = finalize(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), self.cfg["meeting_id"])
+            r = finalize(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), self.cfg["meeting_id"],
+                         project_id=self._meeting_meta.get("project_id"),
+                         attendees=self._meeting_meta.get("attendees"))
             if "error" in r:
                 self.overlay.set_status(f"Couldn't write the minutes: {r['error']}")
             else:
                 where = "and published to Odoo" if r["odoo"]["status"] == "published" else "and saved on the hub"
                 self.overlay.set_status(f"Minutes written {where}" if r["llm"]
                                         else "Only the transcript was saved: the minutes writer isn't available")
+                self.overlay.show_notes_link(f"{self._base_http()}/dashboard#meeting/{self.cfg['meeting_id']}")
+            if quit_after:
+                self.quit()
         threading.Thread(target=work, daemon=True).start()
 
-    def change_meeting(self) -> None:
+    def prompt_end_meeting(self, reason: str = "manual", quit_after: bool = False) -> None:
         def on_tk():
-            new = ask_meeting(self.overlay.root, self.cfg["meeting_id"])
-            if new and MEETING_ID_RE.fullmatch(new):
+            choice = ask_end_meeting(self.overlay.root, self.cfg["meeting_id"], reason)
+            if choice == "finalize":
+                self.finalize(quit_after=quit_after)
+            elif choice == "stop":
                 self.stop()
-                self.cfg["meeting_id"] = new
-                save_config(self.cfg)
-                self.start()
+                if quit_after:
+                    self.quit()
         self.overlay.call(on_tk)
+
+    def prompt_quit(self) -> None:
+        if self.running:
+            self.prompt_end_meeting("manual", quit_after=True)
+        else:
+            self.quit()
+
+    def change_meeting(self) -> None:
+        def fetch_and_ask():
+            meetings = fetch_calendar(self.cfg["server_ip"], self.cfg.get("hub_port", 8085))
+
+            def on_tk():
+                new = ask_meeting(self.overlay.root, self.cfg["meeting_id"], meetings)
+                if new and MEETING_ID_RE.fullmatch(new):
+                    if self.running:
+                        choice = ask_end_meeting(self.overlay.root, self.cfg["meeting_id"], "manual")
+                        if choice == "cancel":
+                            return
+                        if choice == "finalize":
+                            self.finalize()
+                        else:
+                            self.stop()
+                    self.cfg["meeting_id"] = new
+                    save_config(self.cfg)
+                    self.start()
+            self.overlay.call(on_tk)
+        threading.Thread(target=fetch_and_ask, daemon=True).start()
 
     def toggle_overlay(self) -> None:
         self.overlay.call(self.overlay.hide if self.overlay.visible else self.overlay.show)
@@ -142,6 +239,21 @@ class Agent:
             self.tray.stop()
 
 
+def _acquire_single_instance() -> socket.socket | None:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 48085))
+        s.listen(1)
+        return s
+    except OSError:
+        s.close()
+        return None
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    _lock_sock = _acquire_single_instance()
+    if _lock_sock is None:
+        logging.info("OfficeMeetingAgent is already running.")
+        sys.exit(0)
     Agent(load_config()).run()

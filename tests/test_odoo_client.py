@@ -72,7 +72,10 @@ def test_markdown_to_html_lists_and_bold():
 def test_resolve_alias_exact_firstname_fuzzy_unresolved():
     c = fake_client(speaker_aliases={"Ginadomenico": "Gian Domenico Bianchi"})
     assert c.resolve_speaker_to_user_id("Ginadomenico") == 9      # alias -> exact
+    assert c.resolve_speaker_to_user_id("Gian Domenico Bianchi") == 9  # complete name
     assert c.resolve_speaker_to_user_id("[Gabriele]") == 8         # unique first name, brackets stripped
+    assert c.resolve_speaker_to_user_id("Abbasi") == 7             # unique last name
+    assert c.resolve_speaker_to_user_id("Rossi") == 8              # unique last name
     assert c.resolve_speaker_to_user_id("muhammad.abbasi.team@gmail.com") == 7
     assert c.resolve_speaker_to_user_id("Muhamad Abasi") == 7      # STT misspelling -> fuzzy
     assert c.resolve_speaker_to_user_id("Remote-Call") is None
@@ -107,3 +110,39 @@ def test_publish_or_save_when_odoo_down(tmp_path):
     c = OdooMeetingClient(url="http://127.0.0.1:1", db="db", username="u", api_key="k")
     r = c.publish_or_save("daily", "# x\n", ["A"], tmp_path)
     assert r["status"] == "saved_locally" and "reason" in r and (tmp_path / "daily.minutes.md").exists()
+
+
+def test_disambiguate_shared_firstname_via_attendees():
+    c = fake_client()
+    USERS_DUP = USERS + [
+        {"id": 11, "name": "Pietro Amodeo", "login": "pietro.amodeo@a176lab.it", "email": "pietro.amodeo@a176lab.it"},
+        {"id": 12, "name": "Pietro Artale", "login": "pietro@a176lab.it", "email": "pietro@a176lab.it"},
+    ]
+    c._execute = lambda m, meth, a, kw=None: USERS_DUP if (m, meth) == ("res.users", "search_read") else 101
+    assert c.resolve_speaker_to_user_id("Pietro") is None
+    assert c.resolve_speaker_to_user_id("Pietro", preferred_names=["Pietro Artale"]) == 12
+
+
+def test_fetch_upcoming_events_and_projects():
+    c = OdooMeetingClient(url="http://odoo", db="db", username="u", api_key="k")
+
+    def fake_exec(model, method, args, kwargs=None):
+        if (model, method) == ("project.project", "search_read"):
+            return [{"id": 81, "name": "A176LAB Gestione"}]
+        if (model, method) == ("project.project", "read"):
+            return [{"id": 81, "name": "A176LAB Gestione"}]
+        if (model, method) == ("calendar.event", "search_read"):
+            return [{"id": 5, "name": "Mazara Sync", "start": "2026-11-26 09:00:00",
+                     "stop": "2026-11-26 10:00:00", "partner_ids": [99],
+                     "res_model": "project.project", "res_id": 81}]
+        if (model, method) == ("res.users", "search_read"):
+            return [{"id": 7, "name": "Muhammad Abbasi", "partner_id": [99, "Muhammad Abbasi"]}]
+        raise AssertionError((model, method))
+
+    c._execute = fake_exec
+    assert c.fetch_projects() == [{"id": 81, "name": "A176LAB Gestione"}]
+    evs = c.fetch_upcoming_events()
+    assert len(evs) == 1
+    assert evs[0]["meeting_id"] == "2026-11-26_Mazara-Sync"
+    assert evs[0]["project_id"] == 81 and evs[0]["project_name"] == "A176LAB Gestione"
+    assert evs[0]["attendees"] == ["Muhammad Abbasi"]

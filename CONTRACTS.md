@@ -19,7 +19,10 @@ first, then the code.
   `{"type":"error","code":"replaced","message":str}` and is closed with code **4001**. A client
   closed with 4001 must not reconnect automatically (another PC is using that name).
 - `lang` default `auto` (WhisperLive language detection). Loopback audio is a second
-  connection from the same client with `speaker=Remote-Call`.
+  connection from the same client with `speaker=Remote-Call`. If `Remote-Call` is already
+  active in the room, the hub rejects a second `Remote-Call` connection with
+  `{"type":"error","code":"loopback_active","message":str}` and closes with code **4002**
+  (clients closed with 4002 must not reconnect automatically).
 - **Client → hub, binary frames:** raw PCM, `float32` little-endian, 16 000 Hz, mono,
   values in [-1, 1]. Any frame length that is a multiple of 4 bytes. Recommended 4096
   samples (16 384 bytes, 256 ms). Silence may be sent; the hub does not VAD-gate.
@@ -57,13 +60,19 @@ sends nothing.
   `Cache-Control: no-cache`, so a redeploy reaches every open screen on its next load.
 - `GET /api/meetings/{meeting_id}/segments` → JSON list of persisted completed segments,
   each `{"speaker","text","start","end","ts","rms"}` in file order.
-- `POST /api/meetings/{meeting_id}/finalize` → 404 if no segments, else
+- `POST /api/meetings/{meeting_id}/finalize` → optional JSON body
+  `{"project_id"?:int|null,"attendees"?:[str,...]}`. Waits for in-flight hold-window captions
+  to settle before reading segments. Returns 404 if no segments, else
   `{"meeting_id":str,"markdown":str,"llm":bool,"saved_to":str,"odoo":{"status":"published"|"saved_locally",...}}`.
   `llm:false` means Ollama was unreachable and `markdown` is the plain transcript. Minutes are
   always written to `data/meetings/{meeting_id}.minutes.md`, and the outcome to
   `data/meetings/{meeting_id}.finalize.json` (`{"finalized_at":float,"llm":bool,"llm_model":str,
   "llm_error":str|null,"odoo":{...}}`). One run per meeting at a time: a request that arrives while
   a run is going waits for it and returns the same result with `"joined": true`.
+- `GET /api/calendar` → `{"meetings":[{"meeting_id":str,"title":str,"start":str|null,
+  "stop":str|null,"project_id":int|null,"project_name":str|null,"attendees":[str,...],
+  "live_speakers":[str,...]}]}`. Lists today's/upcoming Odoo `calendar.event` entries (when
+  configured and reachable) plus any live rooms; never fails if Odoo is down.
 - Admin endpoints (HTTP Basic, any user, password `ADMIN_PASSWORD`; 403 when unset):
   - `GET /dashboard` → HTML admin page.
   - `GET /api/settings` → `{"values":{<key>:<value>}, "version":int, "status":{...}}`. Keys (see
@@ -84,6 +93,7 @@ sends nothing.
     `WHISPER_MODEL_FILE` and the `WHISPERLIVE_CONTAINER` is restarted via the Docker socket.
   - `POST /api/settings/test` body `{"what":"odoo"|"ollama"|"whisperlive", <keys to try>}` →
     `{"ok":bool,"message":str,...}` using the posted values without saving them.
+  - `GET /api/odoo/projects` → `{"projects":[{"id":int,"name":str}]}`.
   - `POST /api/whisperlive/restart` → `{"message":str}`.
   - `PUT /api/agent/exe` raw body = the exe → `{"agent":{...}}` (stored in `DIST_DIR`).
 - `GET /download/OfficeMeetingAgent.exe` → the uploaded agent (404 before the first upload).

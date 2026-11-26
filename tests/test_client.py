@@ -123,6 +123,33 @@ def test_hublink_stops_when_name_taken_by_another_pc():
     assert states[-1].startswith("stopped: your name is in use")
 
 
+def test_hublink_stops_when_loopback_already_active():
+    import threading
+    from websockets.sync.server import serve
+    from client.hub_link import HubLink, LOOPBACK_ACTIVE
+
+    def handler(ws):
+        ws.send('{"type": "error", "code": "loopback_active", "message": "another computer is already captioning"}')
+        ws.close(LOOPBACK_ACTIVE, "loopback_active")
+
+    with serve(handler, "127.0.0.1", 0) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        port = server.socket.getsockname()[1]
+
+        class Silent:
+            def read(self, timeout=0.5): return None
+
+        states, msgs = [], []
+        link = HubLink(f"ws://127.0.0.1:{port}/ws/daily/Remote-Call", Silent(), msgs.append, states.append)
+        t = threading.Thread(target=link.run, daemon=True)
+        t.start()
+        t.join(timeout=10)
+        server.shutdown()
+    assert not t.is_alive()
+    assert msgs and msgs[0]["code"] == "loopback_active"
+    assert states[-1].startswith("stopped: another PC is already captioning")
+
+
 def test_strip_status_is_plain_language():
     from client.hub_link import friendly_state
     assert friendly_state("connected", "daily") == "Live · daily"

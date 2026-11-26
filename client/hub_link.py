@@ -11,6 +11,7 @@ from websockets.sync.client import connect
 
 
 REPLACED = 4001  # hub close code: this speaker name was taken over by a newer connection
+LOOPBACK_ACTIVE = 4002  # hub close code: another PC is already captioning Remote-Call in this room
 
 
 def friendly_state(state: str, meeting: str, paused: bool = False) -> str:
@@ -35,12 +36,32 @@ def speaker_url(server_ip: str, port: int, meeting_id: str, speaker: str, langua
     return f"ws://{server_ip}:{port}/ws/{meeting_id}/{quote(speaker)}?lang={language}"
 
 
-def finalize(server_ip: str, port: int, meeting_id: str, timeout: float = 600) -> dict:
+def fetch_calendar(server_ip: str, port: int, timeout: float = 3.0) -> list[dict]:
+    """GET /api/calendar; returns [] if the hub is unreachable."""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://{server_ip}:{port}/api/calendar", timeout=timeout) as r:
+            return json.load(r).get("meetings", [])
+    except Exception:
+        return []
+
+
+def finalize(server_ip: str, port: int, meeting_id: str, project_id: int | None = None,
+             attendees: list[str] | None = None, timeout: float = 600) -> dict:
     """POST /finalize; blocking (Ollama can take minutes). Returns the hub's JSON or {"error": str}."""
     import urllib.error
     import urllib.request
 
-    req = urllib.request.Request(f"http://{server_ip}:{port}/api/meetings/{meeting_id}/finalize", method="POST")
+    payload = {}
+    if project_id is not None:
+        payload["project_id"] = project_id
+    if attendees is not None:
+        payload["attendees"] = attendees
+    body = json.dumps(payload).encode("utf-8") if payload else b""
+    headers = {"Content-Type": "application/json"} if payload else {}
+    req = urllib.request.Request(f"http://{server_ip}:{port}/api/meetings/{meeting_id}/finalize",
+                                 data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.load(r)
@@ -76,6 +97,9 @@ class HubLink:
             if ws is not None and ws.close_code == REPLACED:
                 # another PC joined this meeting with the same name: retrying would kick it out in turn
                 self.on_state("stopped: your name is in use on another PC (change it in config.json)")
+                return
+            if ws is not None and ws.close_code == LOOPBACK_ACTIVE:
+                self.on_state("stopped: another PC is already captioning call audio")
                 return
             if self._stop.is_set():
                 break

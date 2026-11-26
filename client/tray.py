@@ -32,10 +32,12 @@ class Tray:
             pystray.MenuItem(lambda i: "Resume" if a.paused else "Pause (send silence)",
                              lambda: a.set_paused(not a.paused), enabled=lambda i: a.running),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Write minutes", lambda: a.finalize()),
+            pystray.MenuItem("End meeting & write notes…", lambda: a.prompt_end_meeting("manual")),
             pystray.MenuItem("Change meeting…", lambda: a.change_meeting()),
+            pystray.MenuItem("Open live captions", lambda: a.open_url("captions")),
+            pystray.MenuItem("Open dashboard", lambda: a.open_url("dashboard")),
             pystray.MenuItem(lambda i: f"Meeting: {a.cfg['meeting_id']} · {a.cfg['user_name']}", None, enabled=False),
-            pystray.MenuItem("Quit", lambda: a.quit()),
+            pystray.MenuItem("Quit", lambda: a.prompt_quit()),
         )
         self.icon = pystray.Icon("OfficeMeetingAgent", _icon(COLORS["stopped"]), "Meeting Captions", menu)
 
