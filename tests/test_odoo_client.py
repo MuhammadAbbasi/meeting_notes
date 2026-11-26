@@ -143,6 +143,8 @@ def test_fetch_upcoming_events_and_projects():
     assert c.fetch_projects() == [{"id": 81, "name": "A176LAB Gestione"}]
     evs = c.fetch_upcoming_events()
     assert len(evs) == 1
-    assert evs[0]["meeting_id"] == "2026-11-26_Mazara-Sync"
+    from datetime import datetime, timezone
+    expected_dt = datetime(2026, 11, 26, 9, 0, tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d_%H%M")
+    assert evs[0]["meeting_id"] == f"{expected_dt}_Mazara-Sync"
     assert evs[0]["project_id"] == 81 and evs[0]["project_name"] == "A176LAB Gestione"
     assert evs[0]["attendees"] == ["Muhammad Abbasi"]

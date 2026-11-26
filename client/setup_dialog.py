@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import sys
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import ttk
 
@@ -94,10 +95,13 @@ def ask_config(defaults: dict) -> dict | None:
         "Shown next to what you say in the captions, and used to assign your action items in Odoo. "
         "Use the same name as in Odoo."), str(defaults.get("user_name", "")))
 
+    default_mid = defaults.get("meeting_id")
+    if not default_mid or default_mid == "daily":
+        default_mid = datetime.now().strftime("%Y-%m-%d_%H%M")
     meeting_var, _ = _entry(section(
         "Meeting",
-        "Everyone who uses the same meeting name sees each other's captions. Ask the organiser, "
-        "for example daily or mazara-weekly."), str(defaults.get("meeting_id", "daily")))
+        "Everyone who uses the same meeting name sees each other's captions. Defaults to date_time "
+        "or pick a scheduled meeting."), str(default_mid))
 
     lang_box = section("Language you speak",
                        "Pick your language. Automatic detection can write the wrong language when several "
@@ -205,7 +209,7 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
     _label(win, "Change meeting", 13, bold=True)
     _label(win, "Pick a scheduled Odoo meeting or type a meeting name.", 9, MUTED, pady=(2, 6))
     choices = [_format_meeting_choice(m) for m in (meetings or [])]
-    var = tk.StringVar(value=current)
+    var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d_%H%M") if current == "daily" else current)
     if choices:
         cb = ttk.Combobox(win, textvariable=var, values=choices, font=(FONT, 11))
         cb.pack(fill="x", ipady=4, pady=(4, 0))

@@ -35,12 +35,15 @@ class CaptionOverlay:
         self.status.pack(side="left")
         self.notes_btn = tk.Button(bar, text="Open notes", command=self._open_notes, **self._btn())
         self._notes_url: str | None = None
-        tk.Button(bar, text="Hide", command=self.hide, **self._btn()).pack(side="right")
+        self.hide_btn = tk.Button(bar, text="Hide", command=self.hide, **self._btn())
+        self.hide_btn.pack(side="right")
         self.pause_btn = tk.Button(bar, text="Pause", command=self._toggle_pause, **self._btn())
         self.pause_btn.pack(side="right", padx=4)
+        self.end_btn = None
         if on_finalize:
             end_style = {**self._btn(), "fg": "#F2B8B5", "activebackground": ERROR_BG, "activeforeground": "#F9DEDC"}
-            tk.Button(bar, text="End meeting", command=on_finalize, **end_style).pack(side="right", padx=4)
+            self.end_btn = tk.Button(bar, text="End meeting", command=on_finalize, **end_style)
+            self.end_btn.pack(side="right", padx=4)
         for widget in (bar, self.status):
             widget.bind("<ButtonPress-1>", self._drag_start)
             widget.bind("<B1-Motion>", self._drag_move)
@@ -90,6 +93,19 @@ class CaptionOverlay:
         self._paused = paused
         self.pause_btn.configure(text="Resume" if paused else "Pause", bg=ERROR_BG if paused else BG,
                                  fg="#F9DEDC" if paused else ACCENT)
+
+    def set_running(self, running: bool) -> None:
+        def apply():
+            if running:
+                self.notes_btn.pack_forget()
+                self.pause_btn.pack(side="right", padx=4, before=self.hide_btn)
+                if self.end_btn is not None:
+                    self.end_btn.pack(side="right", padx=4, before=self.pause_btn)
+            else:
+                self.pause_btn.pack_forget()
+                if self.end_btn is not None:
+                    self.end_btn.pack_forget()
+        self.call(apply)
 
     def show_notes_link(self, url: str) -> None:
         self._notes_url = url

@@ -130,6 +130,7 @@ class Agent:
         self._had_others, self._solo_since, self._end_prompted = False, None, False
         self._meeting_meta = {}
         self._refresh_calendar_meta()
+        self.overlay.set_running(True)
         self.audio.start()
         self.link = HubLink(self._url(self.cfg["user_name"]), self.audio, self._on_hub_message, self._on_state)
         threading.Thread(target=self.link.run, daemon=True).start()
@@ -147,6 +148,7 @@ class Agent:
         self.audio.stop()
         if self.loop_audio is not None:
             self.loop_audio.stop()
+        self.overlay.set_running(False)
         self._on_state("stopped")
 
     def toggle_running(self) -> None:
@@ -165,20 +167,23 @@ class Agent:
 
     def finalize(self, quit_after: bool = False) -> None:
         """Stop streaming, flush audio, and ask the hub for minutes + Odoo push."""
+        mid = self.cfg["meeting_id"]
+        meta = dict(self._meeting_meta)
         self.stop()
 
         def work():
             self.overlay.set_status("Writing minutes… this takes one to three minutes")
-            r = finalize(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), self.cfg["meeting_id"],
-                         project_id=self._meeting_meta.get("project_id"),
-                         attendees=self._meeting_meta.get("attendees"))
+            r = finalize(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), mid,
+                         project_id=meta.get("project_id"),
+                         attendees=meta.get("attendees"))
             if "error" in r:
                 self.overlay.set_status(f"Couldn't write the minutes: {r['error']}")
             else:
                 where = "and published to Odoo" if r["odoo"]["status"] == "published" else "and saved on the hub"
                 self.overlay.set_status(f"Minutes written {where}" if r["llm"]
                                         else "Only the transcript was saved: the minutes writer isn't available")
-                self.overlay.show_notes_link(f"{self._base_http()}/dashboard#meeting/{self.cfg['meeting_id']}")
+                if not quit_after:
+                    self.overlay.show_notes_link(f"{self._base_http()}/dashboard#meeting/{mid}")
             if quit_after:
                 self.quit()
         threading.Thread(target=work, daemon=True).start()

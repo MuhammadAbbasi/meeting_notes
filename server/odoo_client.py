@@ -126,9 +126,14 @@ class OdooMeetingClient:
 
     @staticmethod
     def _event_meeting_id(title: str, start_utc: str) -> str:
-        date_part = (start_utc or "")[:10] or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        slug = re.sub(r"[^A-Za-z0-9_-]+", "-", title).strip("-_")[:48] or "meeting"
-        return f"{date_part}_{slug}"[:64]
+        # Format: YYYY-MM-DD_HHMM_<subject-slug> in local time (matches MEETING_ID_RE, max 64 chars)
+        try:
+            dt = datetime.strptime((start_utc or "")[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).astimezone()
+        except ValueError:
+            dt = datetime.now()
+        dt_part = dt.strftime("%Y-%m-%d_%H%M")
+        slug = re.sub(r"[^A-Za-z0-9_-]+", "-", title).strip("-_")[:43]
+        return f"{dt_part}_{slug}"[:64] if slug else dt_part
 
     def fetch_upcoming_events(self, hours_back: int = 2, hours_ahead: int = 12) -> list[dict[str, Any]]:
         now = datetime.now(timezone.utc)
