@@ -139,6 +139,15 @@ class OdooMeetingClient:
         slug = re.sub(r"[^A-Za-z0-9_-]+", "-", title).strip("-_")[:43]
         return f"{dt_part}_{slug}"[:64] if slug else dt_part
 
+    @staticmethod
+    def _extract_meeting_link(ev: dict[str, Any]) -> str | None:
+        for field in ("videocall_location", "location", "description"):
+            val = ev.get(field) or ""
+            m = re.search(r"https?://[^\s<>\"']+", str(val))
+            if m:
+                return m.group(0)
+        return None
+
     def fetch_upcoming_events(self, hours_back: int = 2, hours_ahead: int = 12) -> list[dict[str, Any]]:
         now = datetime.now(timezone.utc)
         win_start = (now - timedelta(hours=hours_back)).strftime("%Y-%m-%d %H:%M:%S")
@@ -146,8 +155,16 @@ class OdooMeetingClient:
         events = self._execute(
             "calendar.event", "search_read",
             [[["stop", ">=", win_start], ["start", "<=", win_end]]],
-            {"fields": ["id", "name", "start", "stop", "partner_ids", "res_model", "res_id"], "order": "start asc"})
-        partner_ids = sorted({pid for ev in events for pid in (ev.get("partner_ids") or [])})
+            {"fields": ["id", "name", "start", "stop", "allday", "location", "videocall_location",
+                        "description", "partner_ids", "res_model", "res_id"], "order": "start asc"})
+        meetings_only: list[tuple[dict[str, Any], str]] = []
+        for ev in events:
+            if ev.get("allday"):
+                continue
+            link = self._extract_meeting_link(ev)
+            if link:
+                meetings_only.append((ev, link))
+        partner_ids = sorted({pid for ev, _ in meetings_only for pid in (ev.get("partner_ids") or [])})
         partner_to_name: dict[int, str] = {}
         if partner_ids:
             users = self._execute(
@@ -159,13 +176,14 @@ class OdooMeetingClient:
                 pid = p[0] if isinstance(p, (list, tuple)) else p
                 if pid:
                     partner_to_name[int(pid)] = u["name"]
-        proj_ids = sorted({int(ev["res_id"]) for ev in events if ev.get("res_model") == "project.project" and ev.get("res_id")})
+        proj_ids = sorted({int(ev["res_id"]) for ev, _ in meetings_only
+                           if ev.get("res_model") == "project.project" and ev.get("res_id")})
         proj_names: dict[int, str] = {}
         if proj_ids:
             for p in self._execute("project.project", "read", [proj_ids], {"fields": ["id", "name"]}):
                 proj_names[int(p["id"])] = p["name"]
         out = []
-        for ev in events:
+        for ev, link in meetings_only:
             title = (ev.get("name") or "").strip() or f"meeting-{ev['id']}"
             pid = int(ev["res_id"]) if ev.get("res_model") == "project.project" and ev.get("res_id") else None
             attendees = [partner_to_name[int(p)] for p in (ev.get("partner_ids") or []) if int(p) in partner_to_name]
@@ -175,6 +193,7 @@ class OdooMeetingClient:
                 "title": title,
                 "start": ev.get("start"),
                 "stop": ev.get("stop"),
+                "link": link,
                 "project_id": pid,
                 "project_name": proj_names.get(pid) if pid else None,
                 "attendees": attendees,

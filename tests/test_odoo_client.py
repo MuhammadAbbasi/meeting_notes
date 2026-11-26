@@ -132,9 +132,21 @@ def test_fetch_upcoming_events_and_projects():
         if (model, method) == ("project.project", "read"):
             return [{"id": 81, "name": "A176LAB Gestione"}]
         if (model, method) == ("calendar.event", "search_read"):
-            return [{"id": 5, "name": "Mazara Sync", "start": "2026-11-26 09:00:00",
-                     "stop": "2026-11-26 10:00:00", "partner_ids": [99],
-                     "res_model": "project.project", "res_id": 81}]
+            return [
+                {"id": 5, "name": "Mazara Sync", "start": "2026-11-26 09:00:00",
+                 "stop": "2026-11-26 10:00:00", "allday": False,
+                 "videocall_location": "https://teams.microsoft.com/l/meetup-join/123",
+                 "location": False, "description": False,
+                 "partner_ids": [99], "res_model": "project.project", "res_id": 81},
+                {"id": 6, "name": "Gaia Spinelli in ferie: 1 giorno/i", "start": "2026-11-27 00:00:00",
+                 "stop": "2026-11-27 23:59:00", "allday": True,
+                 "videocall_location": False, "location": False, "description": False,
+                 "partner_ids": [], "res_model": False, "res_id": False},
+                {"id": 7, "name": "Reminder without link", "start": "2026-11-26 11:00:00",
+                 "stop": "2026-11-26 11:30:00", "allday": False,
+                 "videocall_location": False, "location": "Ufficio", "description": "Nota",
+                 "partner_ids": [], "res_model": False, "res_id": False},
+            ]
         if (model, method) == ("res.users", "search_read"):
             return [{"id": 7, "name": "Muhammad Abbasi", "partner_id": [99, "Muhammad Abbasi"]}]
         raise AssertionError((model, method))
