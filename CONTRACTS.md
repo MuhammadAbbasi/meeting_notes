@@ -69,6 +69,9 @@ sends nothing.
   `data/meetings/{meeting_id}.finalize.json` (`{"finalized_at":float,"llm":bool,"llm_model":str,
   "llm_error":str|null,"odoo":{...}}`). One run per meeting at a time: a request that arrives while
   a run is going waits for it and returns the same result with `"joined": true`.
+- `POST /api/meetings/{meeting_id}/publish` → 404 if `{meeting_id}.minutes.md` does not exist;
+  publishes the already-saved Markdown to Odoo (updating `{meeting_id}.finalize.json`) without
+  re-running Ollama, returning `{"meeting_id":str,"odoo":{"status":"published"|"saved_locally",...}}`.
 - `GET /api/calendar` → `{"meetings":[{"meeting_id":str,"title":str,"start":str|null,
   "stop":str|null,"project_id":int|null,"project_name":str|null,"attendees":[str,...],
   "live_speakers":[str,...]}]}`. Lists today's/upcoming Odoo `calendar.event` entries (when

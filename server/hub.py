@@ -535,6 +535,26 @@ async def _finalize(meeting_id: str, project_id: int | None = None, attendees: l
             "saved_to": odoo["path"], "odoo": odoo}
 
 
+@app.post("/api/meetings/{meeting_id}/publish")
+async def publish_meeting(meeting_id: str) -> dict:
+    """Publish already-generated minutes to Odoo without re-running Ollama."""
+    _valid_id(meeting_id)
+    md_path = DATA_DIR / f"{meeting_id}.minutes.md"
+    if not md_path.exists():
+        raise HTTPException(404, "meeting has no generated minutes yet")
+    markdown = md_path.read_text(encoding="utf-8")
+    segs = MeetingRoom(meeting_id, DATA_DIR).history()
+    participants = sorted({s["speaker"] for s in segs})
+    meta = _calendar_meta.get(meeting_id, {})
+    odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR,
+                                   project_id=meta.get("project_id"), attendees=meta.get("attendees"))
+    info_path = DATA_DIR / f"{meeting_id}.finalize.json"
+    rec = json.loads(info_path.read_text(encoding="utf-8")) if info_path.exists() else {}
+    rec.update(odoo=odoo)
+    info_path.write_text(json.dumps(rec), encoding="utf-8")
+    return {"meeting_id": meeting_id, "odoo": odoo}
+
+
 # --- live streams -------------------------------------------------------------------------------
 
 @app.websocket("/listen/{meeting_id}")

@@ -774,7 +774,16 @@ async function showDetail() {
       d: `Written ${fmtDate(m.finalized_at)} by ${m.llm_model || "the minutes writer"}. ${(m.odoo.subtasks || []).length} action item(s) assigned to their owners.` }));
   else if (m) { const o = friendlyOdoo(m.odoo && m.odoo.reason);
     st.append(banner({ lvl: o.lvl, t: "Minutes saved on the hub", d: `Written ${fmtDate(m.finalized_at)} by ${m.llm_model || "the minutes writer"}. ${o.text}`,
-      acts: o.lvl === "warn" ? [["Open settings", go("settings")], ["Try again", () => $("#d-finalize").click()]] : [] })); }
+      acts: o.lvl === "warn" ? [["Open settings", go("settings")], ["Publish to Odoo", () => retryOdoo(row.meeting_id)]] : [] })); }
+async function retryOdoo(id) {
+  setBusy(1);
+  try {
+    const r = await api(`/api/meetings/${encodeURIComponent(id)}/publish`, { method: "POST" });
+    snack(r.odoo && r.odoo.status === "published" ? `Published ${id} to Odoo` : `Still saved locally: ${r.odoo && r.odoo.reason || "Odoo unavailable"}`);
+    await loadMeetings(); showDetail();
+  } catch (e) { if (!e.auth) snack("Publish failed: " + e.message); }
+  finally { setBusy(-1); }
+}
   const body = $("#d-body");
   $("#d-copy").hidden = $("#d-download").hidden = !(tab === "minutes" && m);
   if (tab === "minutes") {

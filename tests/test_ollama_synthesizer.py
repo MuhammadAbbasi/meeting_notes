@@ -77,3 +77,35 @@ def test_synthesize_raises_when_offline(monkeypatch):
     monkeypatch.setattr(syn.urllib.request, "urlopen", lambda req, timeout: FakeResp(b"not json"))
     with pytest.raises(syn.SynthesisUnavailable):
         syn.synthesize(SEGS, "daily", "http://ollama:11434", "m")
+
+
+def test_synthesize_renders_structured_json(monkeypatch):
+    payload = {
+        "executive_summary": "Verifica telemetria inverter.",
+        "topics": [{"topic": "Telemetria", "summary": "Controllo eseguito.", "speakers": ["Muhammad"]}],
+        "key_decisions": ["Usare tutte le porte elettriche."],
+        "action_items": [{"owner": "Muhammad", "task": "Verificare cavi", "deadline": "2026-12-01"}],
+    }
+    monkeypatch.setattr(syn.urllib.request, "urlopen",
+                        lambda req, timeout: FakeResp(json.dumps({"message": {"content": json.dumps(payload)}}).encode()))
+    md = syn.synthesize(SEGS, "daily", "http://ollama:11434", "qwen2.5:7b-instruct", language="it")
+    assert "## Executive Summary\nVerifica telemetria inverter." in md
+    assert "- **Telemetria**: Controllo eseguito. [Muhammad]" in md
+    assert "- Usare tutte le porte elettriche." in md
+    assert "| Muhammad | Verificare cavi | 2026-12-01 |" in md
+
+
+def test_synthesize_chunks_long_transcript(monkeypatch):
+    calls = []
+
+    def fake_urlopen(req, timeout):
+        calls.append(json.loads(req.data))
+        part = {"executive_summary": f"Part {len(calls)}.", "topics": [], "key_decisions": [],
+                "action_items": [{"owner": "Gabriele", "task": f"Task {len(calls)}", "deadline": ""}]}
+        return FakeResp(json.dumps({"message": {"content": json.dumps(part)}}).encode())
+
+    monkeypatch.setattr(syn.urllib.request, "urlopen", fake_urlopen)
+    big_segs = [{"speaker": "Muhammad", "text": "x" * 4000} for _ in range(5)]  # 20k chars > CHUNK_CHARS
+    md = syn.synthesize(big_segs, "long", "http://ollama:11434", "m")
+    assert len(calls) >= 2
+    assert "Part 1. Part 2." in md and "| Gabriele | Task 1 |  |" in md and "| Gabriele | Task 2 |  |" in md

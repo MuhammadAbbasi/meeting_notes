@@ -581,3 +581,21 @@ def test_audio_recording_saved_as_wav(client):
     with wave.open(str(wav_path), "rb") as w:
         assert w.getnchannels() == 1 and w.getsampwidth() == 2 and w.getframerate() == 16000
         assert w.getnframes() == 32000
+
+
+def test_publish_retries_odoo_without_rerunning_llm(client, monkeypatch):
+    assert client.post("/api/meetings/daily/publish").status_code == 404
+    (client.tmp / "daily.jsonl").write_text(
+        '{"speaker": "Muhammad", "text": "hello", "start": 0, "end": 1, "ts": 1.0, "rms": 0.1}\n', encoding="utf-8")
+    (client.tmp / "daily.minutes.md").write_text("## Executive Summary\nCached.\n", encoding="utf-8")
+    (client.tmp / "daily.finalize.json").write_text(
+        json.dumps({"finalized_at": 1.0, "llm": True, "odoo": {"status": "saved_locally"}}), encoding="utf-8")
+
+    class FakeOdoo:
+        def publish_or_save(self, meeting_id, markdown, participants, out_dir, project_id=None, attendees=None):
+            return {"status": "published", "parent_task_id": 77, "path": str(out_dir / f"{meeting_id}.minutes.md")}
+
+    monkeypatch.setattr(client.hub, "odoo_client", lambda **kw: FakeOdoo())
+    r = client.post("/api/meetings/daily/publish")
+    assert r.status_code == 200 and r.json()["odoo"]["status"] == "published"
+    assert json.loads((client.tmp / "daily.finalize.json").read_text())["odoo"]["parent_task_id"] == 77
