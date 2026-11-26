@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meeting Captions</title>
+<link rel="icon" href="/icon.png"><link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230b57d0' d='M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z'/%3E%3C/svg%3E">
+<style>
+:root {
+  color-scheme: light dark;
+  --font: "Google Sans", "Google Sans Text", Roboto, "Segoe UI", system-ui, sans-serif;
+  --bg: #F0F4F9; --panel: #FFFFFF; --surface-2: #F8FAFD; --container: #E9EEF6;
+  --on: #1F1F1F; --on-var: #444746; --outline: #747775; --outline-var: #C4C7C5;
+  --primary: #0B57D0; --on-primary: #FFFFFF; --primary-c: #D3E3FD; --on-primary-c: #041E49;
+  --sec-c: #C2E7FF; --on-sec-c: #001D35;
+  --ok: #146C2E; --ok-c: #C4EED0; --warn: #7A5900; --warn-c: #FFDF99;
+  --inverse: #303030; --on-inverse: #F2F2F2;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1B1B1B; --panel: #131314; --surface-2: #1E1F20; --container: #282A2C;
+    --on: #E3E3E3; --on-var: #C4C7C5; --outline: #8E918F; --outline-var: #444746;
+    --primary: #A8C7FA; --on-primary: #062E6F; --primary-c: #0842A0; --on-primary-c: #D3E3FD;
+    --sec-c: #004A77; --on-sec-c: #C2E7FF;
+    --ok: #6DD58C; --ok-c: #0F5223; --warn: #FFD666; --warn-c: #5B4300;
+    --inverse: #E3E3E3; --on-inverse: #303030;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--on); font: 400 14px/22px var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+svg.i { width: 20px; height: 20px; fill: currentColor; flex: none; }
+code { font: 13px/18px ui-monospace, "Roboto Mono", Consolas, monospace; background: var(--container); padding: 2px 6px; border-radius: 6px; word-break: break-all; }
+.topbar { height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 20px; max-width: 1080px; margin: 0 auto; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 500; }
+.grow { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--outline-var); border-radius: 20px; overflow: hidden; background: var(--panel); }
+.seg button { border: 0; background: transparent; color: var(--on-var); padding: 6px 14px; font: 500 13px/20px var(--font); cursor: pointer; }
+.seg button.on { background: var(--sec-c); color: var(--on-sec-c); }
+.btn { font: 500 14px/20px var(--font); height: 40px; padding: 0 20px; border-radius: 20px; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px; text-decoration: none !important; white-space: nowrap; }
+.btn.filled { background: var(--primary); color: var(--on-primary); }
+.btn.tonal { background: var(--sec-c); color: var(--on-sec-c); }
+.btn.outlined { background: transparent; color: var(--primary); border: 1px solid var(--outline); }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 8px 20px 80px; }
+.hero { background: var(--panel); border-radius: 28px; padding: 32px; display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center;
+  border: 1px solid var(--outline-var); }
+.hero h1 { font-size: 32px; line-height: 40px; font-weight: 400; margin: 0 0 8px; }
+.hero p { font-size: 16px; line-height: 24px; color: var(--on-var); margin: 0 0 20px; max-width: 62ch; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px;
+  background: var(--container); color: var(--on-var); font-weight: 500; font-size: 13px; }
+.chip.ok { background: var(--ok-c); color: var(--ok); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; margin-top: 20px; }
+.card { background: var(--panel); border: 1px solid var(--outline-var); border-radius: 16px; padding: 20px 24px; }
+.card h2 { font-size: 18px; line-height: 24px; font-weight: 500; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+.card p, .card li { color: var(--on-var); }
+.card ul, .card ol { margin: 8px 0 0; padding-left: 20px; }
+.card li + li { margin-top: 6px; }
+.section-title { font-size: 20px; font-weight: 500; margin: 28px 0 12px; }
+.meeting-list { list-style: none; margin: 0; padding: 0; }
+.meeting-list li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--outline-var); flex-wrap: wrap; }
+.meeting-list li:first-child { border-top: 0; padding-top: 4px; }
+.install-box { margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--outline-var);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dots { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 10px; }
+.dot-item { padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 13px; }
+#snack { position: fixed; left: 24px; bottom: 24px; padding: 12px 18px; border-radius: 8px; background: var(--inverse); color: var(--on-inverse);
+  transform: translateY(140%); opacity: 0; transition: transform .2s, opacity .2s; pointer-events: none; z-index: 9; }
+#snack.on { transform: none; opacity: 1; }
+[data-lang="it"] .en, [data-lang="en"] .it { display: none; }
+@media (max-width: 720px) {
+  .hero { grid-template-columns: 1fr; padding: 22px; }
+  .hero h1 { font-size: 26px; line-height: 34px; }
+  .topbar { padding: 0 12px; }
+}
+</style>
+</head>
+<body data-lang="en">
+<header class="topbar">
+  <div class="brand"><img src="/icon.png" alt="" width="32" height="32" style="border-radius:8px">Meeting Captions</div>
+  <span class="chip" id="live-chip">…</span>
+  <div class="grow"></div>
+  <div class="seg" role="group" aria-label="Language">
+    <button id="btn-en" class="on" onclick="setLang('en')">English</button>
+    <button id="btn-it" onclick="setLang('it')">Italiano</button>
+  </div>
+  <a class="btn outlined" href="/dashboard"><span class="en">Admin</span><span class="it">Admin</span></a>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <div>
+      <h1>
+        <span class="en">Live captions &amp; automatic meeting notes</span>
+        <span class="it">Sottotitoli in diretta e verbali automatici</span>
+      </h1>
+      <p>
+        <span class="en">Captures meetings in person or on Teams/Zoom/Meet, shows live captions on your screen, and saves clean summaries and action items straight to Odoo Knowledge and Projects — privately on the office server.</span>
+        <span class="it">Ascolta le riunioni dal vivo o su Teams/Zoom/Meet, mostra i sottotitoli in diretta sullo schermo e salva riepiloghi e attività direttamente su Odoo Knowledge e Progetti — tutto in locale sul server dell'ufficio.</span>
+      </p>
+      <div class="actions">
+        <a class="btn filled" href="/download/OfficeMeetingAgent.exe"><span class="en">Download Windows App</span><span class="it">Scarica App Windows</span></a>
+        <button class="btn tonal" id="copy-ps" type="button"><span class="en">Copy 1-line installer</span><span class="it">Copia comando di installazione</span></button>
+      </div>
+      <div class="install-box">
+        <code id="ps-cmd"></code>
+      </div>
+    </div>
+  </section>
+
+  <h2 class="section-title">
+    <span class="en">Live &amp; today's meetings</span>
+    <span class="it">Riunioni in corso e di oggi</span>
+  </h2>
+  <section class="card">
+    <ul class="meeting-list" id="meetings-list">
+      <li><span class="en">Loading meetings…</span><span class="it">Caricamento riunioni…</span></li>
+    </ul>
+  </section>
+
+  <h2 class="section-title">
+    <span class="en">How to use it</span>
+    <span class="it">Come si usa</span>
+  </h2>
+  <div class="grid">
+    <article class="card">
+      <h2><span class="en">1. First-time setup (1 min)</span><span class="it">1. Prima configurazione (1 min)</span></h2>
+      <ol class="en">
+        <li>Install and open <b>Meeting Captions</b> from the Start menu.</li>
+        <li>Enter <b>Your name</b> as it appears in Odoo (full name or last name) so tasks are assigned to you.</li>
+        <li>Keep the automatic date/time meeting name, or pick a shared meeting.</li>
+        <li><b>Italian</b> is the default language (change if needed) and pick your microphone.</li>
+        <li>Turn on <i>Also caption the other side of calls</i> only if you are on a video call (one PC per room).</li>
+      </ol>
+      <ol class="it">
+        <li>Installa e apri <b>Meeting Captions</b> dal menu Start.</li>
+        <li>Inserisci <b>Il tuo nome</b> come compare su Odoo (nome e cognome o cognome) per l'assegnazione dei task.</li>
+        <li>Lascia il nome automatico con data e ora oppure scegli una riunione condivisa.</li>
+        <li><b>Italiano</b> è la lingua predefinita (cambiala se serve) e scegli il tuo microfono.</li>
+        <li>Attiva <i>Also caption the other side of calls</i> solo in videochiamata (un solo PC per stanza).</li>
+      </ol>
+    </article>
+
+    <article class="card">
+      <h2><span class="en">2. During a meeting</span><span class="it">2. Durante la riunione</span></h2>
+      <ul class="en">
+        <li>Drag the caption box anywhere on your screen.</li>
+        <li>Click <b>Pause</b> to mute your mic temporarily, or <b>Hide</b> to keep it running in the background.</li>
+        <li>Right-click the tray icon to switch meetings, change language, or open the full-screen <b>Live captions</b> page.</li>
+      </ul>
+      <ul class="it">
+        <li>Trascina il riquadro dei sottotitoli ovunque sullo schermo.</li>
+        <li>Clicca <b>Pause</b> per silenziare temporaneamente il microfono, oppure <b>Hide</b> per nascondere il riquadro.</li>
+        <li>Fai clic destro sull'icona vicino all'orologio per cambiare riunione, lingua o aprire i <b>Sottotitoli in diretta</b>.</li>
+      </ul>
+      <div class="dots">
+        <div class="dot-item">🟢 <span class="en">Live</span><span class="it">Attivo</span></div>
+        <div class="dot-item">🟡 <span class="en">Paused</span><span class="it">In pausa</span></div>
+        <div class="dot-item">⚪ <span class="en">Stopped</span><span class="it">Fermo</span></div>
+        <div class="dot-item">🔴 <span class="en">Reconnecting</span><span class="it">Riconnessione</span></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2><span class="en">3. Ending &amp; finding notes</span><span class="it">3. Fine riunione e verbali</span></h2>
+      <ul class="en">
+        <li>Click <b>End meeting</b> (or <b>Quit</b>) and choose <b>Stop &amp; generate</b> when prompted.</li>
+        <li>The app also prompts automatically if everyone leaves, after 10 min of silence, or when a calendar meeting ends.</li>
+        <li>Click <b>Open notes</b> when ready, or open <b>Odoo → Knowledge → Meeting Notes</b> and <b>Odoo Projects</b>.</li>
+      </ul>
+      <ul class="it">
+        <li>Clicca <b>End meeting</b> (o <b>Quit</b>) e scegli <b>Stop &amp; generate</b> nella finestra di conferma.</li>
+        <li>L'app chiede conferma in automatico se tutti escono, dopo 10 min di silenzio o a fine riunione sul calendario.</li>
+        <li>Clicca <b>Open notes</b> al termine, oppure apri <b>Odoo → Knowledge → Meeting Notes</b> e <b>Odoo Progetti</b>.</li>
+      </ul>
+    </article>
+  </div>
+</main>
+
+<div id="snack" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const cmd = `powershell -ExecutionPolicy Bypass -NoProfile -Command "irm http://${location.host}/install.ps1 | iex"`;
+$("#ps-cmd").textContent = cmd;
+let snackT = null;
+function snack(t) { const s = $("#snack"); s.textContent = t; s.classList.add("on"); clearTimeout(snackT); snackT = setTimeout(() => s.classList.remove("on"), 3500); }
+$("#copy-ps").onclick = async () => {
+  try { await navigator.clipboard.writeText(cmd); snack(document.body.dataset.lang === "it" ? "Comando copiato" : "Command copied"); }
+  catch (e) { snack("Copy failed"); }
+};
+function setLang(l) {
+  document.body.dataset.lang = l;
+  localStorage.setItem("home-lang", l);
+  $("#btn-en").classList.toggle("on", l === "en");
+  $("#btn-it").classList.toggle("on", l === "it");
+}
+const saved = localStorage.getItem("home-lang");
+if (saved === "it" || (!saved && (navigator.language || "").startsWith("it"))) setLang("it");
+
+async function loadStatus() {
+  try {
+    const h = await (await fetch("/health")).json();
+    const c = $("#live-chip");
+    c.className = "chip" + (h.rooms ? " ok" : "");
+    c.innerHTML = h.rooms
+      ? `<span class="en">${h.rooms} live · ${h.speakers} speaking</span><span class="it">${h.rooms} in corso · ${h.speakers} attivi</span>`
+      : `<span class="en">Ready</span><span class="it">Pronto</span>`;
+  } catch (e) {}
+  try {
+    const cal = await (await fetch("/api/calendar")).json();
+    const list = $("#meetings-list");
+    const items = cal.meetings || [];
+    if (!items.length) {
+      list.innerHTML = `<li><span class="en">No live or scheduled meetings right now. Start one from the Windows app!</span><span class="it">Nessuna riunione attiva o in programma ora. Avviane una dall'app Windows!</span></li>`;
+      return;
+    }
+    list.replaceChildren(...items.map(m => {
+      const li = document.createElement("li");
+      const live = (m.live_speakers || []).length;
+      const time = m.start ? m.start.slice(11, 16) : "";
+      const meta = [time, m.project_name, live ? `${live} live` : ""].filter(Boolean).join(" · ");
+      li.innerHTML = `<div class="grow"><b>${m.title || m.meeting_id}</b><div style="color:var(--on-var);font-size:13px">${m.meeting_id}${meta ? " · " + meta : ""}</div></div>`;
+      const a = document.createElement("a");
+      a.className = "btn tonal";
+      a.href = `/captions/${encodeURIComponent(m.meeting_id)}`;
+      a.innerHTML = `<span class="en">Watch live captions</span><span class="it">Apri sottotitoli</span>`;
+      li.append(a);
+      return li;
+    }));
+  } catch (e) {}
+}
+loadStatus();
+</script>
+</body>
+</html>

@@ -55,6 +55,7 @@ sends nothing.
 
 ### 1.3 HTTP
 
+- `GET /` → public Material 3 landing page (download/install, live & scheduled meetings, EN/IT user guide).
 - `GET /health` → `{"status":"ok","version":str,"transcriber":"mock"|"whisperlive","rooms":int,"speakers":int,"listeners":int}`
 - `GET /captions/{meeting_id}` → HTML viewer (live + history). It and `/dashboard` are sent with
   `Cache-Control: no-cache`, so a redeploy reaches every open screen on its next load.

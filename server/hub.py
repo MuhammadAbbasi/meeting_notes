@@ -43,6 +43,7 @@ HUB_VERSION = "2026.11.25-6"  # bump on every deploy-relevant change; /health re
 _STATIC = Path(__file__).parent / "static"
 VIEWER_HTML = (_STATIC / "captions.html").read_text(encoding="utf-8")
 DASHBOARD_HTML = (_STATIC / "dashboard.html").read_text(encoding="utf-8")
+HOME_HTML = (_STATIC / "home.html").read_text(encoding="utf-8")
 
 app = FastAPI(title="caption-hub")
 S = Settings(SETTINGS_FILE)
@@ -132,9 +133,9 @@ async def _close(ws: WebSocket, code: int = 1000) -> None:
 
 # --- status & admin ---------------------------------------------------------------------------
 
-@app.get("/", include_in_schema=False)
-async def root() -> RedirectResponse:
-    return RedirectResponse("/dashboard")
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def root() -> HTMLResponse:
+    return HTMLResponse(HOME_HTML, headers=NO_CACHE)
 
 
 @app.get("/health")
