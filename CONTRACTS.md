@@ -77,6 +77,8 @@ sends nothing.
   "stop":str|null,"project_id":int|null,"project_name":str|null,"attendees":[str,...],
   "live_speakers":[str,...]}]}`. Lists today's/upcoming Odoo `calendar.event` entries (when
   configured and reachable) plus any live rooms; never fails if Odoo is down.
+- `GET /api/odoo/users` → `{"users":[{"id":int,"name":str,"email":str}]}` (active internal
+  Odoo users, used by the client setup dialog to match a user's email; empty list if unconfigured).
 - Admin endpoints (HTTP Basic, any user, password `ADMIN_PASSWORD`; 403 when unset):
   - `GET /dashboard` → HTML admin page.
   - `GET /api/settings` → `{"values":{<key>:<value>}, "version":int, "status":{...}}`. Keys (see

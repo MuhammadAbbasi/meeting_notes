@@ -47,6 +47,29 @@ def fetch_calendar(server_ip: str, port: int, timeout: float = 3.0) -> list[dict
         return []
 
 
+def match_odoo_user(server_ip: str, port: int, name: str, email: str, timeout: float = 3.0) -> tuple[bool, str, str]:
+    """Match (name, email) against Odoo users on the hub.
+    Returns (ok, canonical_name, message). When the hub/Odoo is unreachable or unconfigured, returns (True, name, '')."""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://{server_ip}:{port}/api/odoo/users", timeout=timeout) as r:
+            users = json.load(r).get("users", [])
+    except Exception:
+        return True, name, ""
+    if not users:
+        return True, name, ""
+    em = email.strip().lower()
+    for u in users:
+        if (u.get("email") or "").strip().lower() == em:
+            return True, u["name"], ""
+    nm = name.strip().lower()
+    for u in users:
+        if (u.get("name") or "").strip().lower() == nm:
+            return True, u["name"], ""
+    return False, name, "Email not found in Odoo. Check your company email."
+
+
 def finalize(server_ip: str, port: int, meeting_id: str, project_id: int | None = None,
              attendees: list[str] | None = None, language: str | None = None, timeout: float = 600) -> dict:
     """POST /finalize; blocking (Ollama can take minutes). Returns the hub's JSON or {"error": str}."""

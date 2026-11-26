@@ -181,6 +181,12 @@ class Agent:
             if "error" in r:
                 self.overlay.set_status(f"Couldn't write the minutes: {r['error']}")
             else:
+                try:
+                    notes_dir = Path(self.cfg.get("notes_dir", "C:/a176lab_meetings"))
+                    notes_dir.mkdir(parents=True, exist_ok=True)
+                    (notes_dir / f"{mid}.minutes.md").write_text(r["markdown"], encoding="utf-8")
+                except OSError:
+                    pass
                 where = "and published to Odoo" if r["odoo"]["status"] == "published" else "and saved on the hub"
                 self.overlay.set_status(f"Minutes written {where}" if r["llm"]
                                         else "Only the transcript was saved: the minutes writer isn't available")

@@ -49,12 +49,14 @@ services:
       ODOO_PROJECT_ID: ${ODOO_PROJECT_ID:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       DATA_DIR: /app/data/meetings
+      EXPORT_DIR: /app/export
       DIST_DIR: /app/data/dist
       SETTINGS_FILE: /app/data/settings.json
       WHISPER_MODEL_FILE: /config/whisper_model
       WHISPERLIVE_CONTAINER: caption-whisperlive
     volumes:
       - ./data:/app/data
+      - C:/a176lab_meetings:/app/export
       - hub-config:/config
       - //var/run/docker.sock:/var/run/docker.sock   # lets the dashboard restart WhisperLive after a model change
     depends_on: [whisperlive]

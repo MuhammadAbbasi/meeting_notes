@@ -33,6 +33,7 @@ from server.transcriber import TranscriberUnavailable, make_transcriber
 
 log = logging.getLogger("hub")
 DATA_DIR = Path(os.getenv("DATA_DIR", "./data/meetings"))
+EXPORT_DIR = Path(os.getenv("EXPORT_DIR")) if os.getenv("EXPORT_DIR") else None
 DIST_DIR = Path(os.getenv("DIST_DIR", "./data/dist"))
 SETTINGS_FILE = Path(os.getenv("SETTINGS_FILE", "./data/settings.json"))
 WHISPER_MODEL_FILE = Path(os.getenv("WHISPER_MODEL_FILE", "./data/config/whisper_model"))
@@ -301,6 +302,20 @@ async def odoo_projects() -> dict:
         return {"projects": []}
 
 
+@app.get("/api/odoo/users")
+async def odoo_users() -> dict:
+    """Active internal Odoo users (name + email) for client first-run matching."""
+    client = odoo_client()
+    if not client.is_configured:
+        return {"users": []}
+    try:
+        rows = await asyncio.to_thread(client.fetch_active_users)
+        return {"users": [{"id": int(u["id"]), "name": u["name"], "email": u.get("email") or u.get("login") or ""}
+                          for u in rows]}
+    except Exception:
+        return {"users": []}
+
+
 @app.get("/api/calendar")
 async def calendar() -> dict:
     """Today's Odoo calendar events merged with any live rooms (never fails if Odoo is unreachable)."""
@@ -426,9 +441,10 @@ async def icon() -> FileResponse:
 @app.get("/download/config.json")
 async def download_config(request: Request) -> dict:
     """Pre-filled agent config: the setup dialog on a new PC only asks for the person's name."""
-    return {"user_name": "", "server_ip": request.url.hostname, "hub_port": request.url.port or 80,
+    return {"user_name": "", "user_email": "", "server_ip": request.url.hostname, "hub_port": request.url.port or 80,
             "meeting_id": S.get("default_meeting"), "language": S.get("default_language"),
-            "input_device": None, "overlay_alpha": 0.5, "capture_system_audio": False}
+            "input_device": None, "overlay_alpha": 0.5, "capture_system_audio": False,
+            "notes_dir": "C:/a176lab_meetings"}
 
 
 # --- meetings -----------------------------------------------------------------------------------
@@ -528,6 +544,12 @@ async def _finalize(meeting_id: str, project_id: int | None = None, attendees: l
     target_attendees = attendees if attendees is not None else meta.get("attendees")
     odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR,
                                    project_id=target_project, attendees=target_attendees)
+    if EXPORT_DIR is not None:
+        try:
+            EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+            (EXPORT_DIR / f"{meeting_id}.minutes.md").write_text(markdown, encoding="utf-8")
+        except OSError as e:
+            log.warning("export write failed: %s", e)
     (DATA_DIR / f"{meeting_id}.finalize.json").write_text(
         json.dumps({"finalized_at": time.time(), "llm": llm, "llm_model": S.get("ollama_model"), "llm_error": llm_error,
                     "odoo": odoo}), encoding="utf-8")

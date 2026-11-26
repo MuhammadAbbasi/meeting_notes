@@ -150,6 +150,23 @@ def test_hublink_stops_when_loopback_already_active():
     assert states[-1].startswith("stopped: another PC is already captioning")
 
 
+def test_match_odoo_user(monkeypatch):
+    import io
+    from client import hub_link
+
+    users = [{"id": 59, "name": "Muhammad Abbasi", "email": "abbasi@a176lab.it"}]
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda url, timeout=3.0: FakeResp(
+        f'{{"users": {users}}}'.replace("'", '"').encode()))
+    assert hub_link.match_odoo_user("127.0.0.1", 8085, "Muhammad", "abbasi@a176lab.it") == (True, "Muhammad Abbasi", "")
+    ok, _, msg = hub_link.match_odoo_user("127.0.0.1", 8085, "Unknown", "missing@a176lab.it")
+    assert ok is False and "not found" in msg
+
+
 def test_strip_status_is_plain_language():
     from client.hub_link import friendly_state
     assert friendly_state("connected", "daily") == "Live · daily"

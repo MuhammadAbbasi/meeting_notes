@@ -600,3 +600,15 @@ def test_publish_retries_odoo_without_rerunning_llm(client, monkeypatch):
     r = client.post("/api/meetings/daily/publish")
     assert r.status_code == 200 and r.json()["odoo"]["status"] == "published"
     assert json.loads((client.tmp / "daily.finalize.json").read_text())["odoo"]["parent_task_id"] == 77
+
+
+def test_odoo_users_and_export_dir(monkeypatch, tmp_path):
+    exp = tmp_path / "export"
+    (tmp_path / "d").mkdir()
+    with make_client(monkeypatch, tmp_path / "d", EXPORT_DIR=str(exp)) as c:
+        assert c.get("/api/odoo/users").json() == {"users": []}
+        c.hub.synthesize = lambda segs, mid, url, model, *a: "## Executive Summary\nExported.\n"
+        (c.tmp / "daily.jsonl").write_text(
+            '{"speaker": "Muhammad", "text": "hello", "start": 0, "end": 1, "ts": 1.0, "rms": 0.1}\n', encoding="utf-8")
+        assert c.post("/api/meetings/daily/finalize").status_code == 200
+        assert (exp / "daily.minutes.md").read_text(encoding="utf-8") == "## Executive Summary\nExported.\n"

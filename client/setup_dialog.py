@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import ttk
 
+from hub_link import match_odoo_user
+
 ASSETS = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "assets"
 SPEAKER_RE = re.compile(r"^[A-Za-z0-9 _.-]{1,40}$")  # same rule as the hub (CONTRACTS 1.1)
 MEETING_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -92,8 +94,11 @@ def ask_config(defaults: dict) -> dict | None:
 
     name_var, name_entry = _entry(section(
         "Your name",
-        "Shown next to what you say in the captions, and used to assign your action items in Odoo. "
-        "Use the same name as in Odoo."), str(defaults.get("user_name", "")))
+        "Shown next to what you say in the captions."), str(defaults.get("user_name", "")))
+
+    email_var, email_entry = _entry(section(
+        "Your company email",
+        "Matched with Odoo so action items are assigned to your account."), str(defaults.get("user_email", "")))
 
     default_mid = defaults.get("meeting_id")
     if not default_mid or default_mid == "daily":
@@ -153,10 +158,14 @@ def ask_config(defaults: dict) -> dict | None:
     error.pack(fill="x", pady=(10, 0))
 
     def ok(_=None):
-        name, meeting = name_var.get().strip(), meeting_var.get().strip()
+        name, email, meeting = name_var.get().strip(), email_var.get().strip(), meeting_var.get().strip()
         if not SPEAKER_RE.fullmatch(name):
             error.configure(text="Type your name: letters, digits, spaces, dots, - or _ (up to 40 characters).")
             name_entry.focus_set()
+            return
+        if "@" not in email or "." not in email.split("@", 1)[-1]:
+            error.configure(text="Type your company email (for example, name@a176lab.it).")
+            email_entry.focus_set()
             return
         if not MEETING_RE.fullmatch(meeting):
             error.configure(text="The meeting name can use letters, digits, - and _ only, without spaces.")
@@ -166,12 +175,19 @@ def ask_config(defaults: dict) -> dict | None:
         except ValueError:
             error.configure(text="The hub port must be a number, usually 8085.")
             return
-        if not ip_var.get().strip():
+        ip = ip_var.get().strip()
+        if not ip:
             error.configure(text="The hub address is empty. Open Advanced and type the address the admin gave you.")
             return
+        matched, canonical_name, msg = match_odoo_user(ip, port, name, email)
+        if not matched:
+            error.configure(text=msg)
+            email_entry.focus_set()
+            return
         dev_id = next((idx for idx, lbl in devices if lbl == mic_var.get()), None)
-        result.update(dict(defaults, user_name=name, meeting_id=meeting, server_ip=ip_var.get().strip(), hub_port=port,
-                           input_device=dev_id, language=dict(LANGUAGES)[lang_var.get()], capture_system_audio=loop_var.get()))
+        result.update(dict(defaults, user_name=canonical_name, user_email=email, meeting_id=meeting, server_ip=ip,
+                           hub_port=port, input_device=dev_id, language=dict(LANGUAGES)[lang_var.get()],
+                           capture_system_audio=loop_var.get()))
         root.destroy()
 
     btns = tk.Frame(root, bg=BG, padx=24, pady=16)
