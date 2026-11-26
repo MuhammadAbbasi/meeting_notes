@@ -342,12 +342,12 @@ class OdooMeetingClient:
             owner_uid = self.resolve_speaker_to_user_id(item.owner, preferred_names=attendees)
             vals: dict[str, Any] = {
                 "name": item.task if owner_uid is not None else f"[{item.owner}] {item.task}",
-                "parent_id": parent_task_id,
                 "description": (f"<p><strong>Assigned Speaker:</strong> {item.owner}</p>"
                                 f"<p><strong>Source Meeting:</strong> {meeting_id} ({meeting_date})</p>"),
             }
             if target_project_id:
                 vals["project_id"] = target_project_id
+                vals["parent_id"] = parent_task_id  # Odoo forbids parent_id on private tasks (project_id=False)
             if owner_uid is not None:
                 vals["user_ids"] = [(6, 0, [owner_uid])]
             deadline = self._normalize_deadline(item.deadline)
