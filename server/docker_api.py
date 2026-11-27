@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import http.client
+import json
 import socket
 
 
@@ -26,5 +27,30 @@ def restart_container(name: str, sock_path: str = "/var/run/docker.sock", timeou
         body = resp.read().decode(errors="replace")
         if resp.status >= 300:
             raise RuntimeError(f"docker restart {name}: HTTP {resp.status} {body.strip()}")
+    finally:
+        conn.close()
+
+
+def exec_container(name: str, cmd: list[str], sock_path: str = "/var/run/docker.sock",
+                   timeout_s: int = 300, connection: http.client.HTTPConnection | None = None) -> str:
+    """Run a command inside a running container over the Docker socket and return stdout."""
+    conn = connection or UnixHTTPConnection(sock_path, timeout=timeout_s)
+    hdrs = {"Content-Type": "application/json"}
+    try:
+        conn.request("POST", f"/containers/{name}/exec",
+                     body=json.dumps({"AttachStdout": True, "AttachStderr": True, "Tty": True, "Cmd": cmd}),
+                     headers=hdrs)
+        r1 = conn.getresponse()
+        b1 = r1.read().decode(errors="replace")
+        if r1.status >= 300:
+            raise RuntimeError(f"docker exec create {name}: HTTP {r1.status} {b1.strip()}")
+        exec_id = json.loads(b1)["Id"]
+        conn.request("POST", f"/exec/{exec_id}/start",
+                     body=json.dumps({"Detach": False, "Tty": True}), headers=hdrs)
+        r2 = conn.getresponse()
+        b2 = r2.read().decode(errors="replace")
+        if r2.status >= 300:
+            raise RuntimeError(f"docker exec start {name}: HTTP {r2.status} {b2.strip()}")
+        return b2
     finally:
         conn.close()

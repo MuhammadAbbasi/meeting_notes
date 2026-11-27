@@ -24,7 +24,7 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 from collections import deque
 
 from server.deduplicator import CrossTalkFilter, is_room_noise, normalize_text
-from server.docker_api import restart_container
+from server.docker_api import exec_container, restart_container
 from server.meeting import MEETING_ID_RE, SPEAKER_RE, AudioRecorder, MeetingRoom, StreamClock, caption_frame
 from server.odoo_client import OdooMeetingClient
 from server.ollama_synthesizer import SynthesisUnavailable, synthesize, transcript_markdown
@@ -521,15 +521,53 @@ async def finalize(meeting_id: str, request: Request) -> dict:
                                attendees=opts.get("attendees"), language=opts.get("language"))
 
 
+_RETRANSCRIBE_PY = """
+import json, pathlib, sys
+from faster_whisper import WhisperModel
+audio_dir, model_id, lang = pathlib.Path(sys.argv[1]), sys.argv[2], (None if sys.argv[3] == "auto" else sys.argv[3])
+m = WhisperModel(model_id, device="cuda", compute_type="float16")
+rows = []
+for wav in sorted(audio_dir.glob("*.wav")):
+    sp = wav.stem.replace("_", " ")
+    segs, _ = m.transcribe(str(wav), language=lang, beam_size=5, vad_filter=True, condition_on_previous_text=False)
+    for s in segs:
+        t = s.text.strip()
+        if t:
+            rows.append({"speaker": sp, "text": t, "start": float(s.start), "end": float(s.end), "ts": wav.stat().st_mtime + float(s.start), "rms": 0.1})
+rows.sort(key=lambda r: r["ts"])
+print(json.dumps(rows, ensure_ascii=False))
+""".strip()
+
+
+def retranscribe_audio(meeting_id: str, lang: str) -> list[dict] | None:
+    """Batch re-transcribe saved WAVs in WhisperLive container for higher accuracy; returns None if unavailable."""
+    if S.get("transcriber") == "mock":
+        return None
+    audio_dir = DATA_DIR / "audio" / meeting_id
+    if not audio_dir.exists() or not any(audio_dir.glob("*.wav")):
+        return None
+    try:
+        out = exec_container(WHISPERLIVE_CONTAINER, [
+            "python", "-c", _RETRANSCRIBE_PY, f"/app/data/meetings/audio/{meeting_id}", S.get("whisper_model"), lang
+        ])
+        for line in reversed(out.splitlines()):
+            if line.strip().startswith("["):
+                rows = json.loads(line.strip())
+                return [r for r in rows if not is_room_noise(r["text"], r["rms"], S.get("noise_floor_rms"))] or None
+    except Exception as e:
+        log.warning("%s: batch re-transcription skipped (%s)", meeting_id, e)
+    return None
+
+
 async def _finalize(meeting_id: str, project_id: int | None = None, attendees: list[str] | None = None,
                     language: str | None = None) -> dict:
     if _pending:  # flush in-flight hold-window captions so the final sentence isn't dropped
         await asyncio.gather(*list(_pending), return_exceptions=True)
-    segs = MeetingRoom(meeting_id, DATA_DIR).history()
+    lang = language or S.get("default_language") or "it"
+    segs = await asyncio.to_thread(retranscribe_audio, meeting_id, lang) or MeetingRoom(meeting_id, DATA_DIR).history()
     if not segs:
         raise HTTPException(404, "no completed captions for this meeting")
     llm_error = None
-    lang = language or S.get("default_language") or "it"
     try:
         # 10 min: on a GPU shared with live recognition a long meeting took over the old 5 min (measured)
         markdown = await asyncio.to_thread(synthesize, segs, meeting_id, S.get("ollama_url"), S.get("ollama_model"), 600,

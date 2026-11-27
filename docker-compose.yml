@@ -17,6 +17,7 @@ services:
     volumes:
       - hf-cache:/root/.cache
       - hub-config:/config
+      - ./data:/app/data:ro
     networks: [meetnet]
     restart: unless-stopped
     deploy:

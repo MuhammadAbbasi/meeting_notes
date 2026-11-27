@@ -612,3 +612,19 @@ def test_odoo_users_and_export_dir(monkeypatch, tmp_path):
             '{"speaker": "Muhammad", "text": "hello", "start": 0, "end": 1, "ts": 1.0, "rms": 0.1}\n', encoding="utf-8")
         assert c.post("/api/meetings/daily/finalize").status_code == 200
         assert (exp / "daily.minutes.md").read_text(encoding="utf-8") == "## Executive Summary\nExported.\n"
+
+
+def test_finalize_uses_retranscribed_audio_when_available(client, monkeypatch):
+    (client.tmp / "daily.jsonl").write_text(
+        '{"speaker": "Muhammad", "text": "Grazie a tutti.", "start": 0, "end": 1, "ts": 1.0, "rms": 0.1}\n', encoding="utf-8")
+    accurate = [{"speaker": "Muhammad", "text": "Pulizia pannelli settore B", "start": 0.0, "end": 3.0, "ts": 1.0, "rms": 0.1}]
+    monkeypatch.setattr(client.hub, "retranscribe_audio", lambda mid, lang: accurate)
+    seen = {}
+
+    def fake_synth(segs, mid, url, model, *a):
+        seen["segs"] = segs
+        return "## Executive Summary\nOK\n"
+
+    monkeypatch.setattr(client.hub, "synthesize", fake_synth)
+    assert client.post("/api/meetings/daily/finalize").status_code == 200
+    assert seen["segs"] == accurate
