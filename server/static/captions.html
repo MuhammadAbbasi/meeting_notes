@@ -75,19 +75,19 @@ main { max-width: 920px; margin: 0 auto; padding: 16px 20px 160px; }
 </svg>
 <header>
   <h1 id="title"></h1>
-  <span class="chip" id="status"><span class="pulse"></span><span id="status-text">Connecting</span></span>
-  <div id="roster" aria-label="People speaking"></div>
-  <button class="icon-btn" id="size" title="Larger text" aria-label="Larger text" aria-pressed="false"><svg class="i"><use href="#i-text"/></svg></button>
+  <span class="chip" id="status"><span class="pulse"></span><span id="status-text">Connessione</span></span>
+  <div id="roster" aria-label="Partecipanti"></div>
+  <button class="icon-btn" id="size" title="Testo più grande" aria-label="Testo più grande" aria-pressed="false"><svg class="i"><use href="#i-text"/></svg></button>
 </header>
 <div class="banner" id="conn" hidden role="alert">
   <div class="ico"><svg class="i"><use href="#i-err"/></svg></div>
-  <div><b>Connection lost</b><span id="conn-text">Reconnecting…</span></div>
-  <button class="btn" id="retry">Try now</button>
+  <div><b>Connessione persa</b><span id="conn-text">Riconnessione…</span></div>
+  <button class="btn" id="retry">Riprova ora</button>
 </div>
 <main id="log" aria-live="polite" aria-relevant="additions">
-  <div class="empty" id="empty"><svg class="i"><use href="#i-mic"/></svg><b>Waiting for someone to speak</b>Captions appear here as people talk in this meeting.</div>
+  <div class="empty" id="empty"><svg class="i"><use href="#i-mic"/></svg><b>In attesa che qualcuno parli</b>I sottotitoli appaiono qui in tempo reale.</div>
 </main>
-<button id="jump"><svg class="i"><use href="#i-down"/></svg>New captions</button>
+<button id="jump"><svg class="i"><use href="#i-down"/></svg>Nuovi sottotitoli</button>
 <div id="snack" role="status" aria-live="polite"></div>
 <script>
 "use strict";
@@ -104,7 +104,7 @@ function avatar(name, cls = "av") {
   s.style.background = `hsl(${hue(name)} 70% 88%)`; s.style.color = `hsl(${hue(name)} 60% 25%)`;
   s.textContent = String(name).trim().charAt(0).toUpperCase() || "?"; return s;
 }
-const fmt = ts => typeof ts === "number" ? new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+const fmt = ts => typeof ts === "number" ? new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
 let snackT = null;
 function snack(text) { const s = $("#snack"); s.textContent = text; s.classList.add("on"); clearTimeout(snackT); snackT = setTimeout(() => s.classList.remove("on"), 4000); }
 
@@ -166,12 +166,12 @@ function connect() {
   clearTimeout(retryTimer);
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}/listen/${encodeURIComponent(MEETING)}`);
-  ws.onopen = async () => { attempt = 0; setStatus(true, "Live"); try { await loadHistory(); } catch (e) {} };
+  ws.onopen = async () => { attempt = 0; setStatus(true, "In diretta"); try { await loadHistory(); } catch (e) {} };
   ws.onclose = () => {
     // exponential backoff with jitter, so a room full of screens doesn't reconnect in the same instant
     const delay = Math.min(15000, 1000 * 2 ** attempt++) * (0.5 + Math.random() / 2);
-    setStatus(false, "Reconnecting");
-    $("#conn-text").textContent = `Trying again in ${Math.ceil(delay / 1000)} s. Captions said in the meantime are loaded when it's back.`;
+    setStatus(false, "Riconnessione");
+    $("#conn-text").textContent = `Nuovo tentativo tra ${Math.ceil(delay / 1000)} s. I sottotitoli nel frattempo verranno caricati al ripristino.`;
     retryTimer = setTimeout(connect, delay);
   };
   ws.onmessage = ev => {
@@ -179,7 +179,7 @@ function connect() {
     if (m.type === "roster") setRoster(m.speakers);
     else if (m.type === "caption") { render(m); settle(); }
     else if (m.type === "retract") retract(m.speaker);
-    else if (m.type === "finalized") snack(m.llm ? "The minutes of this meeting were written" : "The transcript of this meeting was saved");
+    else if (m.type === "finalized") snack(m.llm ? "Il verbale della riunione è stato generato" : "La trascrizione della riunione è stata salvata");
   };
 }
 $("#retry").onclick = () => { attempt = 0; if (ws) ws.onclose = null, ws.close(); connect(); };

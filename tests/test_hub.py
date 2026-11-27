@@ -224,7 +224,7 @@ AUTH = ("admin", "pw")
 def test_admin_requires_password(client):
     home = client.get("/")
     assert home.status_code == 200 and "Meeting Captions" in home.text and "Come si usa" in home.text
-    assert "Sign in" in client.get("/dashboard").text  # page is public, data is not
+    assert "Accedi" in client.get("/dashboard").text  # page is public, data is not
     r = client.get("/api/settings")
     assert r.status_code == 401 and "www-authenticate" not in r.headers  # no browser auth dialog
     assert client.get("/api/settings", auth=("x", "wrong")).status_code == 401

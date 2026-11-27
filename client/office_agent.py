@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from audio_capture import LoopbackCapture, MicCapture
-from hub_link import HubLink, fetch_calendar, finalize, friendly_state, publish_draft, speaker_url
+from hub_link import HubLink, fetch_calendar, finalize, friendly_state, speaker_url
 from overlay_ui import CaptionOverlay
-from setup_dialog import ask_config, ask_end_meeting, ask_meeting, ask_review_draft, ask_start_scheduled
+from setup_dialog import ask_config, ask_end_meeting, ask_meeting, ask_start_scheduled
 from tray import Tray
 
 HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))  # bundled resources when frozen
@@ -180,52 +180,32 @@ class Agent:
             self.tray.set_state("paused" if (self.paused or self.mic_paused) else "connected")
 
     def finalize(self, quit_after: bool = False) -> None:
-        """Stop streaming, generate draft notes, let user review/edit (auto-publish in 60 s), then publish."""
+        """Stop streaming, generate draft notes, and open the dashboard so the user can review/edit captions."""
         mid = self.cfg["meeting_id"]
         lang = self.cfg.get("language", "it")
         meta = dict(self._meeting_meta)
         self.stop()
 
         def work():
-            self.overlay.set_status("Writing draft minutes… this takes a moment")
+            self.overlay.set_status("Generazione bozza verbale in corso…")
             r = finalize(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), mid,
                          project_id=meta.get("project_id"), attendees=meta.get("attendees"),
                          language=lang, publish=False)
             if "error" in r:
-                self.overlay.set_status(f"Couldn't write the minutes: {r['error']}")
-                if quit_after:
-                    self.quit()
-                return
-
-            def review():
-                send, edited_md, edited_caps = ask_review_draft(
-                    self.overlay.root, mid, r["markdown"], r.get("segments") or [], auto_send_s=60)
+                self.overlay.set_status(f"Errore generazione verbale: {r['error']}")
+            else:
                 try:
                     notes_dir = Path(self.cfg.get("notes_dir", "C:/a176lab_meetings"))
                     notes_dir.mkdir(parents=True, exist_ok=True)
-                    (notes_dir / f"{mid}.minutes.md").write_text(edited_md, encoding="utf-8")
+                    (notes_dir / f"{mid}.minutes.md").write_text(r["markdown"], encoding="utf-8")
                 except OSError:
                     pass
-                if not send:
-                    self.overlay.set_status("Draft saved locally (not published to Odoo)")
-                    if quit_after:
-                        self.quit()
-                    return
-
-                def do_publish():
-                    self.overlay.set_status("Publishing to Odoo…")
-                    pub = publish_draft(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), mid, edited_md)
-                    if "error" in pub:
-                        self.overlay.set_status(f"Odoo publish failed: {pub['error']}")
-                    else:
-                        where = "and published to Odoo" if pub["odoo"]["status"] == "published" else "and saved on the hub"
-                        self.overlay.set_status(f"Minutes written {where}")
-                        if not quit_after:
-                            self.overlay.show_notes_link(f"{self._base_http()}/dashboard#meeting/{mid}")
-                    if quit_after:
-                        self.quit()
-                threading.Thread(target=do_publish, daemon=True).start()
-            self.overlay.call(review)
+                self.overlay.set_status("Bozza pronta: apertura dashboard per revisione…")
+                url = f"{self._base_http()}/dashboard#meeting/{mid}"
+                self.overlay.show_notes_link(url)
+                webbrowser.open(url)
+            if quit_after:
+                self.quit()
         threading.Thread(target=work, daemon=True).start()
 
     def prompt_end_meeting(self, reason: str = "manual", quit_after: bool = False) -> None:

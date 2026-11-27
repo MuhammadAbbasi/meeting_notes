@@ -13,8 +13,8 @@ from hub_link import match_odoo_user
 ASSETS = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "assets"
 SPEAKER_RE = re.compile(r"^[A-Za-z0-9 _.-]{1,40}$")  # same rule as the hub (CONTRACTS 1.1)
 MEETING_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-LANGUAGES = [("Italian", "it"), ("English", "en"), ("German", "de"), ("French", "fr"), ("Spanish", "es"),
-             ("Detect automatically", "auto")]
+LANGUAGES = [("Italiano", "it"), ("English", "en"), ("Deutsch", "de"), ("Français", "fr"), ("Español", "es"),
+             ("Rileva automaticamente", "auto")]
 BLUE, INK, MUTED, LINE, ERROR, BG, HEAD = "#0B57D0", "#1F1F1F", "#444746", "#C4C7C5", "#B3261E", "#FFFFFF", "#F0F4F9"
 FONT = "Segoe UI"
 
@@ -50,7 +50,7 @@ def _button(parent, text, command, primary):
 def ask_config(defaults: dict) -> dict | None:
     """Setup window; returns the config dict, or None if the person cancels."""
     root = tk.Tk()
-    root.title("Meeting Captions – set up")
+    root.title("Meeting Captions – Configurazione")
     root.configure(bg=BG)
     root.resizable(False, False)
     set_window_icon(root)
@@ -66,8 +66,8 @@ def ask_config(defaults: dict) -> dict | None:
         pass
     titles = tk.Frame(head, bg=HEAD)
     titles.pack(side="left", fill="x")
-    _label(titles, "Set up Meeting Captions", 15, bold=True)
-    _label(titles, "Takes a minute. You can switch meetings later from the tray icon.", 10, MUTED)
+    _label(titles, "Configura Meeting Captions", 15, bold=True)
+    _label(titles, "Richiede un minuto. Puoi cambiare riunione in seguito dall'icona vicino all'orologio.", 10, MUTED)
 
     body = tk.Frame(root, bg=BG, padx=24, pady=8)
     body.pack(fill="x")
@@ -80,46 +80,42 @@ def ask_config(defaults: dict) -> dict | None:
         return f
 
     name_var, name_entry = _entry(section(
-        "Your first and last name",
-        "Enter both first and last name (e.g. Muhammad Abbasi). Shown in captions and matched with Odoo."),
+        "Nome e cognome",
+        "Inserisci nome e cognome (es. Muhammad Abbasi). Mostrato nei sottotitoli e abbinato a Odoo."),
         str(defaults.get("user_name", "")))
 
     email_var, email_entry = _entry(section(
-        "Your company email",
-        "Matched with Odoo so action items are assigned to your account."), str(defaults.get("user_email", "")))
+        "Email aziendale",
+        "Abbinata a Odoo per assegnare automaticamente le tue attività."), str(defaults.get("user_email", "")))
 
     default_mid = defaults.get("meeting_id")
     if not default_mid or default_mid == "daily":
         default_mid = datetime.now().strftime("%Y-%m-%d_%H%M")
     meeting_var, _ = _entry(section(
-        "Meeting",
-        "Everyone who uses the same meeting name sees each other's captions. Defaults to date_time "
-        "or pick a scheduled meeting."), str(default_mid))
+        "Riunione",
+        "Chi usa lo stesso nome riunione vede i sottotitoli condivisi. Predefinito: data_ora."), str(default_mid))
 
-    lang_box = section("Language you speak",
-                       "Pick your language. Automatic detection can write the wrong language when several "
-                       "people talk at once.")
+    lang_box = section("Lingua parlata",
+                       "Scegli la lingua della riunione (predefinito: Italiano).")
     names = [n for n, _ in LANGUAGES]
     code = str(defaults.get("language", "it"))
-    lang_var = tk.StringVar(value=next((n for n, c in LANGUAGES if c == code), "Italian"))
+    lang_var = tk.StringVar(value=next((n for n, c in LANGUAGES if c == code), "Italiano"))
     ttk.Combobox(lang_box, textvariable=lang_var, values=names, state="readonly", font=(FONT, 11)).pack(fill="x", pady=(4, 0), ipady=3)
 
     calls = tk.Frame(body, bg=BG)
     calls.pack(fill="x", pady=(16, 0))
     loop_var = tk.BooleanVar(value=bool(defaults.get("capture_system_audio", True)))
-    tk.Checkbutton(calls, text="Also caption the other side of calls", variable=loop_var, bg=BG, fg=INK,
+    tk.Checkbutton(calls, text="Sottotitola anche i partecipanti remoti (call)", variable=loop_var, bg=BG, fg=INK,
                    activebackground=BG, selectcolor=BG, font=(FONT, 10, "bold"), anchor="w").pack(fill="x")
-    _label(calls, "Turn this on if you join Teams, Zoom or Meet calls from this computer. What the computer plays "
-                  "through its speakers is captioned as \"Remote-Call\", so remote participants appear in the "
-                  "captions too. Only one person per meeting room should turn it on, otherwise remote speech is "
-                  "captioned twice.", 9, MUTED, padx=(24, 0))
+    _label(calls, "Attivalo per acquisire l'audio di Teams, Zoom o Meet (etichettato come \"Remote-1\", \"Remote-2\"). "
+                  "Se più colleghi sono nella stessa stanza, il server gestisce automaticamente un solo flusso remoto.", 9, MUTED, padx=(24, 0))
 
     # advanced: hub address, normally filled in by the installer
     adv = tk.Frame(body, bg=BG)
     adv_shown = tk.BooleanVar(value=False)
-    toggle = tk.Label(body, text="▸ Advanced: hub address", bg=BG, fg=BLUE, cursor="hand2", font=(FONT, 9, "bold"), anchor="w")
+    toggle = tk.Label(body, text="▸ Avanzate: indirizzo server", bg=BG, fg=BLUE, cursor="hand2", font=(FONT, 9, "bold"), anchor="w")
     toggle.pack(fill="x", pady=(14, 0))
-    _label(adv, "Filled in automatically. Change it only if the office admin tells you to.", 9, MUTED)
+    _label(adv, "Compilato in automatico. Modificalo solo se indicato dall'amministratore.", 9, MUTED)
     row = tk.Frame(adv, bg=BG)
     row.pack(fill="x")
     ip_frame, port_frame = tk.Frame(row, bg=BG), tk.Frame(row, bg=BG)
@@ -130,7 +126,7 @@ def ask_config(defaults: dict) -> dict | None:
 
     def flip(_=None):
         adv_shown.set(not adv_shown.get())
-        toggle.configure(text=("▾" if adv_shown.get() else "▸") + " Advanced: hub address")
+        toggle.configure(text=("▾" if adv_shown.get() else "▸") + " Avanzate: indirizzo server")
         (adv.pack(fill="x", after=toggle) if adv_shown.get() else adv.pack_forget())
     toggle.bind("<Button-1>", flip)
 
@@ -140,24 +136,24 @@ def ask_config(defaults: dict) -> dict | None:
     def ok(_=None):
         name, email, meeting = name_var.get().strip(), email_var.get().strip(), meeting_var.get().strip()
         if not SPEAKER_RE.fullmatch(name) or len(name.split()) < 2:
-            error.configure(text="Enter both your first and last name (e.g. Muhammad Abbasi).")
+            error.configure(text="Inserisci sia il nome che il cognome (es. Muhammad Abbasi).")
             name_entry.focus_set()
             return
         if "@" not in email or "." not in email.split("@", 1)[-1]:
-            error.configure(text="Type your company email (for example, name@a176lab.it).")
+            error.configure(text="Inserisci la tua email aziendale (es. nome@a176lab.it).")
             email_entry.focus_set()
             return
         if not MEETING_RE.fullmatch(meeting):
-            error.configure(text="The meeting name can use letters, digits, - and _ only, without spaces.")
+            error.configure(text="Il nome riunione può contenere solo lettere, numeri, - e _, senza spazi.")
             return
         try:
             port = int(port_var.get().strip() or 8085)
         except ValueError:
-            error.configure(text="The hub port must be a number, usually 8085.")
+            error.configure(text="La porta del server deve essere un numero (di solito 8085).")
             return
         ip = ip_var.get().strip()
         if not ip:
-            error.configure(text="The hub address is empty. Open Advanced and type the address the admin gave you.")
+            error.configure(text="L'indirizzo del server è vuoto. Apri Avanzate per inserirlo.")
             return
         matched, canonical_name, msg = match_odoo_user(ip, port, name, email)
         if not matched:
@@ -172,8 +168,8 @@ def ask_config(defaults: dict) -> dict | None:
 
     btns = tk.Frame(root, bg=BG, padx=24, pady=16)
     btns.pack(fill="x")
-    _button(btns, "Start", ok, True).pack(side="right")
-    _button(btns, "Cancel", root.destroy, False).pack(side="right", padx=(0, 8))
+    _button(btns, "Salva e avvia", ok, True).pack(side="right")
+    _button(btns, "Annulla", root.destroy, False).pack(side="right", padx=(0, 8))
     root.bind("<Return>", ok)
     root.bind("<Escape>", lambda e: root.destroy())
     if not defaults.get("server_ip"):
@@ -198,13 +194,13 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
                 current_lang: str = "it", allow_same: bool = False) -> tuple[str, str] | None:
     """Google-styled meeting switcher with Odoo calendar + language; returns (meeting_id, language) or None."""
     win = tk.Toplevel(parent)
-    win.title("Start or join meeting")
+    win.title("Avvia o partecipa a riunione")
     win.configure(bg=BG, padx=24, pady=18)
     win.resizable(False, False)
     win.attributes("-topmost", True)
     set_window_icon(win)
-    _label(win, "Start or join meeting", 13, bold=True)
-    _label(win, "Pick a scheduled Odoo meeting or type a meeting name.", 9, MUTED, pady=(2, 6))
+    _label(win, "Avvia o partecipa a riunione", 13, bold=True)
+    _label(win, "Scegli una riunione dal calendario Odoo o scrivi un nome.", 9, MUTED, pady=(2, 6))
     choices = [_format_meeting_choice(m) for m in (meetings or [])]
     var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d_%H%M") if current in ("", "daily") or allow_same else current)
     if choices:
@@ -213,9 +209,9 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
         entry = cb
     else:
         var, entry = _entry(win, current)
-    _label(win, "Meeting language", 9, MUTED, pady=(10, 0))
+    _label(win, "Lingua riunione", 9, MUTED, pady=(10, 0))
     lang_names = [n for n, _ in LANGUAGES]
-    lang_var = tk.StringVar(value=next((n for n, c in LANGUAGES if c == current_lang), "Italian"))
+    lang_var = tk.StringVar(value=next((n for n, c in LANGUAGES if c == current_lang), "Italiano"))
     ttk.Combobox(win, textvariable=lang_var, values=lang_names, state="readonly", font=(FONT, 11)).pack(fill="x", pady=(4, 0), ipady=3)
     err = tk.Label(win, text="", bg=BG, fg=ERROR, font=(FONT, 9), anchor="w")
     err.pack(fill="x", pady=(6, 0))
@@ -224,7 +220,7 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
     def ok(_=None):
         v = var.get().split("  —  ", 1)[0].strip()
         if not MEETING_RE.fullmatch(v):
-            err.configure(text="Letters, digits, - and _ only, without spaces.")
+            err.configure(text="Solo lettere, numeri, - e _, senza spazi.")
             return
         out["v"] = v
         out["lang"] = dict(LANGUAGES)[lang_var.get()]
@@ -232,8 +228,8 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
 
     btns = tk.Frame(win, bg=BG)
     btns.pack(fill="x", pady=(12, 0))
-    _button(btns, "Join", ok, True).pack(side="right")
-    _button(btns, "Cancel", win.destroy, False).pack(side="right", padx=(0, 8))
+    _button(btns, "Partecipa", ok, True).pack(side="right")
+    _button(btns, "Annulla", win.destroy, False).pack(side="right", padx=(0, 8))
     win.bind("<Return>", ok)
     win.bind("<Escape>", lambda e: win.destroy())
     entry.focus_set()
@@ -247,13 +243,13 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
 def ask_start_scheduled(parent: tk.Misc, title: str) -> bool:
     """Prompt when a scheduled Odoo calendar meeting begins."""
     win = tk.Toplevel(parent)
-    win.title("Meeting starting")
+    win.title("Riunione in arrivo")
     win.configure(bg=BG, padx=24, pady=20)
     win.resizable(False, False)
     win.attributes("-topmost", True)
     set_window_icon(win)
-    _label(win, f"Start captions for “{title}”?", 13, bold=True)
-    _label(win, "This scheduled Odoo meeting is starting now. Do you want to start captioning?", 10, MUTED, pady=(6, 4))
+    _label(win, f"Avviare i sottotitoli per “{title}”?", 13, bold=True)
+    _label(win, "Questa riunione dal calendario Odoo sta iniziando ora. Vuoi avviare i sottotitoli?", 10, MUTED, pady=(6, 4))
     out = {"start": False}
 
     def go(val: bool):
@@ -262,8 +258,8 @@ def ask_start_scheduled(parent: tk.Misc, title: str) -> bool:
 
     btns = tk.Frame(win, bg=BG)
     btns.pack(fill="x", pady=(14, 0))
-    _button(btns, "Start captions", lambda: go(True), True).pack(side="right")
-    _button(btns, "Not now", lambda: go(False), False).pack(side="right", padx=(0, 8))
+    _button(btns, "Avvia sottotitoli", lambda: go(True), True).pack(side="right")
+    _button(btns, "Non ora", lambda: go(False), False).pack(side="right", padx=(0, 8))
     win.bind("<Return>", lambda e: go(True))
     win.bind("<Escape>", lambda e: go(False))
     win.grab_set()
@@ -271,81 +267,21 @@ def ask_start_scheduled(parent: tk.Misc, title: str) -> bool:
     return out["start"]
 
 
-def ask_review_draft(parent: tk.Misc, meeting_id: str, markdown: str,
-                     segments: list[dict], auto_send_s: int = 60) -> tuple[bool, str, str]:
-    """Show draft notes + captions for review/edit; auto-publishes after `auto_send_s` unless edited or cancelled."""
-    win = tk.Toplevel(parent)
-    win.title(f"Review draft notes – {meeting_id}")
-    win.configure(bg=BG, padx=24, pady=18)
-    win.geometry("760x620")
-    win.attributes("-topmost", True)
-    set_window_icon(win)
-
-    _label(win, f"Review draft notes ({meeting_id})", 14, bold=True)
-    timer_lbl = _label(win, f"Publishing to Odoo automatically in {auto_send_s} s (edit to pause timer)…", 10, BLUE, pady=(2, 8))
-
-    _label(win, "Draft Meeting Notes (Markdown)", 10, bold=True, pady=(4, 2))
-    notes_txt = tk.Text(win, height=13, font=("Consolas", 10), bg="#F8FAFD", fg=INK, relief="solid", bd=1, wrap="word")
-    notes_txt.insert("1.0", markdown)
-    notes_txt.pack(fill="both", expand=True)
-
-    _label(win, "Draft Captions (Transcript)", 10, bold=True, pady=(10, 2))
-    caps_txt = tk.Text(win, height=9, font=(FONT, 9), bg="#F8FAFD", fg=INK, relief="solid", bd=1, wrap="word")
-    caps_txt.insert("1.0", "\n".join(f"[{s['speaker']}] {s['text']}" for s in segments))
-    caps_txt.pack(fill="both", expand=True)
-
-    state = {"send": False, "left": auto_send_s, "paused": False}
-
-    def pause_timer(_=None):
-        if not state["paused"]:
-            state["paused"] = True
-            timer_lbl.configure(text="Auto-publish paused while editing. Click 'Publish to Odoo now' when ready.", fg=MUTED)
-
-    notes_txt.bind("<Key>", pause_timer)
-    caps_txt.bind("<Key>", pause_timer)
-
-    def finish(send: bool):
-        state["send"] = send
-        state["md"] = notes_txt.get("1.0", "end").strip() + "\n"
-        state["caps"] = caps_txt.get("1.0", "end").strip()
-        win.destroy()
-
-    def tick():
-        if state["paused"] or not win.winfo_exists():
-            return
-        state["left"] -= 1
-        if state["left"] <= 0:
-            finish(True)
-            return
-        timer_lbl.configure(text=f"Publishing to Odoo automatically in {state['left']} s (type to pause)…")
-        win.after(1000, tick)
-
-    btns = tk.Frame(win, bg=BG)
-    btns.pack(fill="x", pady=(12, 0))
-    _button(btns, "Publish to Odoo now", lambda: finish(True), True).pack(side="right")
-    _button(btns, "Keep local draft only", lambda: finish(False), False).pack(side="right", padx=(0, 8))
-    win.protocol("WM_DELETE_WINDOW", lambda: finish(False))
-    win.after(1000, tick)
-    win.grab_set()
-    parent.wait_window(win)
-    return state["send"], state.get("md", markdown), state.get("caps", "")
-
-
 def ask_end_meeting(parent: tk.Misc, meeting_id: str, reason: str = "manual") -> str:
     """Confirm stopping the tool and generating meeting notes. Returns 'finalize', 'stop', or 'cancel'."""
     reasons = {
-        "empty": "Everyone else has left this meeting.",
-        "idle": "No speech has been detected for 10 minutes.",
-        "scheduled": "The scheduled meeting time in Odoo has ended.",
+        "empty": "Tutti gli altri partecipanti hanno lasciato la riunione.",
+        "idle": "Nessun parlato rilevato negli ultimi 10 minuti.",
+        "scheduled": "L'orario previsto su Odoo per questa riunione è terminato.",
     }
     win = tk.Toplevel(parent)
-    win.title("End meeting")
+    win.title("Termina riunione")
     win.configure(bg=BG, padx=24, pady=20)
     win.resizable(False, False)
     win.attributes("-topmost", True)
     set_window_icon(win)
-    _label(win, f"End meeting “{meeting_id}”?", 13, bold=True)
-    msg = (f"{reasons[reason]} " if reason in reasons else "") + "Do you want to stop the tool and generate meeting notes?"
+    _label(win, f"Terminare la riunione “{meeting_id}”?", 13, bold=True)
+    msg = (f"{reasons[reason]} " if reason in reasons else "") + "Vuoi fermare lo strumento e generare il verbale?"
     _label(win, msg, 10, MUTED, pady=(6, 4))
     out = {"choice": "cancel"}
 
@@ -355,9 +291,9 @@ def ask_end_meeting(parent: tk.Misc, meeting_id: str, reason: str = "manual") ->
 
     btns = tk.Frame(win, bg=BG)
     btns.pack(fill="x", pady=(14, 0))
-    _button(btns, "Stop & generate", lambda: pick("finalize"), True).pack(side="right")
-    _button(btns, "Stop only", lambda: pick("stop"), False).pack(side="right", padx=(0, 6))
-    _button(btns, "Cancel", lambda: pick("cancel"), False).pack(side="right", padx=(0, 6))
+    _button(btns, "Ferma e genera", lambda: pick("finalize"), True).pack(side="right")
+    _button(btns, "Ferma soltanto", lambda: pick("stop"), False).pack(side="right", padx=(0, 6))
+    _button(btns, "Annulla", lambda: pick("cancel"), False).pack(side="right", padx=(0, 6))
     win.bind("<Return>", lambda e: pick("finalize"))
     win.bind("<Escape>", lambda e: pick("cancel"))
     win.grab_set()

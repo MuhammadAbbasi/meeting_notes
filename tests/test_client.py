@@ -164,13 +164,13 @@ def test_match_odoo_user(monkeypatch):
         f'{{"users": {users}}}'.replace("'", '"').encode()))
     assert hub_link.match_odoo_user("127.0.0.1", 8085, "Muhammad", "abbasi@a176lab.it") == (True, "Muhammad Abbasi", "")
     ok, _, msg = hub_link.match_odoo_user("127.0.0.1", 8085, "Unknown", "missing@a176lab.it")
-    assert ok is False and "not found" in msg
+    assert ok is False and "non trovata" in msg
 
 
 def test_strip_status_is_plain_language():
     from client.hub_link import friendly_state
-    assert friendly_state("connected", "daily") == "Live · daily"
-    assert friendly_state("connected", "daily", paused=True) == "Paused · daily"
-    assert friendly_state("reconnecting (ConnectionRefusedError)", "daily") == "Reconnecting to the hub…"
-    assert friendly_state("stopped", "daily").startswith("Stopped")
+    assert friendly_state("connected", "daily") == "In diretta · daily"
+    assert friendly_state("connected", "daily", paused=True) == "In pausa · daily"
+    assert friendly_state("reconnecting (ConnectionRefusedError)", "daily") == "Riconnessione al server…"
+    assert friendly_state("stopped", "daily").startswith("Fermo.")
     assert friendly_state("stopped: your name is in use on another PC (change it in config.json)", "d").startswith("Stopped: your name")

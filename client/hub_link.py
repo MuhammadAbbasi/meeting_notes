@@ -15,13 +15,13 @@ LOOPBACK_ACTIVE = 4002  # hub close code: another PC is already captioning Remot
 
 
 def friendly_state(state: str, meeting: str, paused: bool = False) -> str:
-    """What the caption strip says about the connection, in words a person understands."""
+    """What the caption strip says about the connection, in Italian plain language."""
     if state == "connected":
-        return f"Paused · {meeting}" if paused else f"Live · {meeting}"
+        return f"In pausa · {meeting}" if paused else f"In diretta · {meeting}"
     if state.startswith("reconnecting"):
-        return "Reconnecting to the hub…"
+        return "Riconnessione al server…"
     if state == "stopped":
-        return "Stopped. Start it again from the tray icon."
+        return "Fermo. Avvia una riunione dall'icona vicino all'orologio."
     return state[:1].upper() + state[1:]
 
 
@@ -67,7 +67,7 @@ def match_odoo_user(server_ip: str, port: int, name: str, email: str, timeout: f
     for u in users:
         if (u.get("name") or "").strip().lower() == nm:
             return True, u["name"], ""
-    return False, name, "Email not found in Odoo. Check your company email."
+    return False, name, "Email non trovata su Odoo. Controlla la tua email aziendale."
 
 
 def finalize(server_ip: str, port: int, meeting_id: str, project_id: int | None = None,

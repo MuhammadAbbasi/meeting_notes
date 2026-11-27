@@ -25,23 +25,23 @@ class Tray:
         self.agent = agent
         a = agent
         menu = pystray.Menu(
-            pystray.MenuItem(lambda i: "Switch meeting…" if a.running else "Start / Create meeting…",
+            pystray.MenuItem(lambda i: "Cambia riunione…" if a.running else "Avvia / Crea riunione…",
                              lambda: a.change_meeting(), default=True),
-            pystray.MenuItem(lambda i: "Hide captions" if a.overlay.visible else "Show captions",
+            pystray.MenuItem(lambda i: "Nascondi sottotitoli" if a.overlay.visible else "Mostra sottotitoli",
                              lambda: a.toggle_overlay()),
-            pystray.MenuItem(lambda i: "Stop streaming" if a.running else "Start streaming",
+            pystray.MenuItem(lambda i: "Ferma streaming" if a.running else "Avvia streaming",
                              lambda: a.toggle_running()),
-            pystray.MenuItem(lambda i: "Unmute my mic" if a.mic_paused else "Mute my mic",
+            pystray.MenuItem(lambda i: "Riattiva il mio mic" if a.mic_paused else "Silenzia il mio mic",
                              lambda: a.set_mic_paused(not a.mic_paused), enabled=lambda i: a.running),
-            pystray.MenuItem(lambda i: "Resume entire meeting" if a.paused else "Pause entire meeting",
+            pystray.MenuItem(lambda i: "Riprendi riunione" if a.paused else "Metti in pausa riunione",
                              lambda: a.set_paused(not a.paused), enabled=lambda i: a.running),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("End meeting & write notes…", lambda: a.prompt_end_meeting("manual"),
+            pystray.MenuItem("Termina riunione e genera verbale…", lambda: a.prompt_end_meeting("manual"),
                              enabled=lambda i: a.running),
-            pystray.MenuItem("Open live captions", lambda: a.open_url("captions")),
-            pystray.MenuItem("Open dashboard", lambda: a.open_url("dashboard")),
-            pystray.MenuItem(lambda i: f"Meeting: {a.cfg['meeting_id']} · {a.cfg['user_name']}", None, enabled=False),
-            pystray.MenuItem("Quit", lambda: a.prompt_quit()),
+            pystray.MenuItem("Apri sottotitoli in diretta", lambda: a.open_url("captions")),
+            pystray.MenuItem("Apri dashboard", lambda: a.open_url("dashboard")),
+            pystray.MenuItem(lambda i: f"Riunione: {a.cfg['meeting_id']} · {a.cfg['user_name']}", None, enabled=False),
+            pystray.MenuItem("Esci", lambda: a.prompt_quit()),
         )
         self.icon = pystray.Icon("OfficeMeetingAgent", _icon(COLORS["stopped"]), "Meeting Captions", menu)
 

@@ -32,20 +32,20 @@ class CaptionOverlay:
 
         bar = tk.Frame(root, bg=BG)
         bar.pack(fill="x", padx=6, pady=(4, 0))
-        self.status = tk.Label(bar, text="Connecting to the hub…", bg=BG, fg=MUTED, font=("Segoe UI", 9))
+        self.status = tk.Label(bar, text="Connessione al server…", bg=BG, fg=MUTED, font=("Segoe UI", 9))
         self.status.pack(side="left")
-        self.notes_btn = tk.Button(bar, text="Open notes", command=self._open_notes, **self._btn())
+        self.notes_btn = tk.Button(bar, text="Apri verbale", command=self._open_notes, **self._btn())
         self._notes_url: str | None = None
-        self.hide_btn = tk.Button(bar, text="Hide", command=self.hide, **self._btn())
+        self.hide_btn = tk.Button(bar, text="Nascondi", command=self.hide, **self._btn())
         self.hide_btn.pack(side="right")
-        self.pause_btn = tk.Button(bar, text="Pause all", command=self._toggle_pause, **self._btn())
+        self.pause_btn = tk.Button(bar, text="Pausa tutto", command=self._toggle_pause, **self._btn())
         self.pause_btn.pack(side="right", padx=4)
-        self.mic_btn = tk.Button(bar, text="Mute mic", command=self._toggle_mic, **self._btn())
+        self.mic_btn = tk.Button(bar, text="Silenzia mic", command=self._toggle_mic, **self._btn())
         self.mic_btn.pack(side="right", padx=4)
         self.end_btn = None
         if on_finalize:
             end_style = {**self._btn(), "fg": "#F2B8B5", "activebackground": ERROR_BG, "activeforeground": "#F9DEDC"}
-            self.end_btn = tk.Button(bar, text="End meeting", command=on_finalize, **end_style)
+            self.end_btn = tk.Button(bar, text="Termina riunione", command=on_finalize, **end_style)
             self.end_btn.pack(side="right", padx=4)
         for widget in (bar, self.status):
             widget.bind("<ButtonPress-1>", self._drag_start)
@@ -95,12 +95,12 @@ class CaptionOverlay:
 
     def set_paused(self, paused: bool) -> None:
         self._paused = paused
-        self.pause_btn.configure(text="Resume all" if paused else "Pause all", bg=ERROR_BG if paused else BG,
+        self.pause_btn.configure(text="Riprendi tutto" if paused else "Pausa tutto", bg=ERROR_BG if paused else BG,
                                  fg="#F9DEDC" if paused else ACCENT)
 
     def set_mic_paused(self, paused: bool) -> None:
         self._mic_paused = paused
-        self.mic_btn.configure(text="Unmute mic" if paused else "Mute mic", bg=ERROR_BG if paused else BG,
+        self.mic_btn.configure(text="Riattiva mic" if paused else "Silenzia mic", bg=ERROR_BG if paused else BG,
                                fg="#F9DEDC" if paused else ACCENT)
 
     def set_running(self, running: bool) -> None:
@@ -163,7 +163,7 @@ class CaptionOverlay:
             elif f["type"] == "error":
                 self.status.configure(text=f["message"])
             elif f["type"] == "finalized":
-                self.status.configure(text="Minutes written" if f["llm"] else "Only the transcript was saved: the minutes writer isn't available")
+                self.status.configure(text="Verbale generato" if f["llm"] else "Solo trascrizione salvata: generatore non disponibile")
             elif f["type"] == "caption":
                 if f["completed"]:
                     self._partials.pop(f["speaker"], None)

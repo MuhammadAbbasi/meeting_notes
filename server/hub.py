@@ -626,6 +626,13 @@ async def publish_meeting(meeting_id: str, request: Request) -> dict:
         jsonl = DATA_DIR / f"{meeting_id}.jsonl"
         jsonl.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in opts["segments"]), encoding="utf-8")
     segs = MeetingRoom(meeting_id, DATA_DIR).history()
+    if opts.get("re_synthesize") and segs:
+        try:
+            markdown = await asyncio.to_thread(synthesize, segs, meeting_id, S.get("ollama_url"), S.get("ollama_model"),
+                                               600, opts.get("language") or S.get("default_language") or "it")
+            md_path.write_text(markdown, encoding="utf-8")
+        except SynthesisUnavailable:
+            pass
     participants = sorted({s["speaker"] for s in segs})
     meta = _calendar_meta.get(meeting_id, {})
     odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR,
