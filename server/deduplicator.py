@@ -12,21 +12,24 @@ MIN_WORDS = 4
 # produced 2,127 of them). ponytail: fixed list; extend it when new phantom phrases show up in transcripts.
 STOCK_HALLUCINATIONS = {
     "thank you", "thank you very much", "thanks for watching", "thank you for watching", "bye", "you",
+    "grazie", "grazie a tutti", "grazie mille", "grazie a te", "grazie grazie", "ciao", "ciao a tutti",
+    "prego", "buona giornata", "a presto", "sottotitoli a cura di",
     "감사합니다", "ご視聴ありがとうございました", "sottotitoli creati dalla comunità amaraorg",
     "sottotitoli a cura di qtss", "subtitles by the amaraorg community",
 }
 
 
 def is_room_noise(text: str, rms: float, floor: float) -> bool:
-    """True for captions that are almost certainly not speech: quieter than `floor`, or a very short or
-    stock phrase that is also quiet (below 4x the floor). floor <= 0 disables the filter.
-    Measured on real data: floor 0.005 drops 58% of phantom captions (0.008: 69%) and none of the real speech."""
+    """True for captions that are almost certainly not speech: quieter than `floor`, or a very short
+    utterance below 4x floor, or a known Whisper hallucination below 8x floor. floor <= 0 disables."""
     if floor <= 0:
         return False
     if rms < floor:
         return True
     words = normalize_text(text)
-    return rms < 4 * floor and (words in STOCK_HALLUCINATIONS or len(words.split()) <= 2)  # shorter utterances ("ok", "sì") are legitimately said by several people
+    if words in STOCK_HALLUCINATIONS:
+        return rms < 8 * floor
+    return rms < 4 * floor and len(words.split()) <= 2  # shorter utterances ("ok", "sì") are legitimately said by several people
 
 
 def normalize_text(s: str) -> str:

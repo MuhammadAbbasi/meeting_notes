@@ -83,6 +83,7 @@ def test_room_noise_filter_matches_measured_behaviour():
     from server.deduplicator import is_room_noise
     assert is_room_noise("Thank you.", 0.0005, 0.005)           # silence
     assert is_room_noise("감사합니다.", 0.012, 0.005)            # stock phantom, quiet
+    assert is_room_noise("Grazie a tutti.", 0.035, 0.005)       # Italian Whisper phantom
     assert is_room_noise("Oh okay", 0.015, 0.005)                 # 2 words, quiet
     assert not is_room_noise("Thank you.", 0.07, 0.005)           # said out loud: kept
     assert not is_room_noise("ok", 0.05, 0.005)                   # short but at speech volume: kept
