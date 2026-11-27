@@ -7,6 +7,6 @@
   "language": "it",
   "input_device": null,
   "overlay_alpha": 0.5,
-  "capture_system_audio": false,
+  "capture_system_audio": true,
   "notes_dir": "C:/a176lab_meetings"
 }

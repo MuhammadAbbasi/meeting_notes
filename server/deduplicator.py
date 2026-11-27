@@ -83,3 +83,32 @@ class CrossTalkFilter:
             if other["rms"] > frame["rms"] or (other["rms"] == frame["rms"] and i < mine):
                 return False
         return True
+
+
+def merge_internal_and_remote(rows: list[dict], window_s: float = 3.0, similarity: float = 0.65) -> list[dict]:
+    """Merge named internal speakers with Remote-Call segments: drop Remote-Call duplicates that echo an
+    internal speaker, and number remaining remote speakers (Remote-1, Remote-2, ...)."""
+    internal = [r for r in rows if not str(r.get("speaker", "")).startswith("Remote")]
+    out = list(internal)
+    remote_idx = 0
+    last_remote_end = -1e9
+    for r in rows:
+        sp = str(r.get("speaker", ""))
+        if not sp.startswith("Remote"):
+            continue
+        is_echo = any(
+            abs(float(i.get("ts", 0)) - float(r.get("ts", 0))) <= window_s
+            and text_similarity(i.get("text", ""), r.get("text", "")) >= similarity
+            for i in internal
+        )
+        if is_echo:
+            continue
+        if sp == "Remote-Call":
+            start = float(r.get("start", 0))
+            if remote_idx == 0 or start - last_remote_end > 4.0:
+                remote_idx = 1 if remote_idx == 0 else (2 if remote_idx == 1 else 1)
+            last_remote_end = float(r.get("end", start))
+            r = {**r, "speaker": f"Remote-{remote_idx}"}
+        out.append(r)
+    out.sort(key=lambda x: (float(x.get("ts", 0)), float(x.get("start", 0))))
+    return out

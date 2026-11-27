@@ -23,7 +23,7 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from collections import deque
 
-from server.deduplicator import CrossTalkFilter, is_room_noise, normalize_text
+from server.deduplicator import CrossTalkFilter, is_room_noise, merge_internal_and_remote, normalize_text
 from server.docker_api import exec_container, restart_container
 from server.meeting import MEETING_ID_RE, SPEAKER_RE, AudioRecorder, MeetingRoom, StreamClock, caption_frame
 from server.odoo_client import OdooMeetingClient
@@ -443,7 +443,7 @@ async def download_config(request: Request) -> dict:
     """Pre-filled agent config: the setup dialog on a new PC only asks for the person's name."""
     return {"user_name": "", "user_email": "", "server_ip": request.url.hostname, "hub_port": request.url.port or 80,
             "meeting_id": S.get("default_meeting"), "language": S.get("default_language"),
-            "input_device": None, "overlay_alpha": 0.5, "capture_system_audio": False,
+            "input_device": None, "overlay_alpha": 0.5, "capture_system_audio": True,
             "notes_dir": "C:/a176lab_meetings"}
 
 
@@ -519,7 +519,8 @@ async def finalize(meeting_id: str, request: Request) -> dict:
                     "llm_error": rec.get("llm_error"), "saved_to": str(md), "odoo": rec["odoo"], "joined": True}
     async with lock:
         return await _finalize(meeting_id, project_id=opts.get("project_id"),
-                               attendees=opts.get("attendees"), language=opts.get("language"))
+                               attendees=opts.get("attendees"), language=opts.get("language"),
+                               publish=opts.get("publish", True))
 
 
 _RETRANSCRIBE_PY = """
@@ -561,13 +562,14 @@ def retranscribe_audio(meeting_id: str, lang: str) -> list[dict] | None:
 
 
 async def _finalize(meeting_id: str, project_id: int | None = None, attendees: list[str] | None = None,
-                    language: str | None = None) -> dict:
+                    language: str | None = None, publish: bool = True) -> dict:
     if _pending:  # flush in-flight hold-window captions so the final sentence isn't dropped
         await asyncio.gather(*list(_pending), return_exceptions=True)
     lang = language or S.get("default_language") or "it"
     segs = await asyncio.to_thread(retranscribe_audio, meeting_id, lang) or MeetingRoom(meeting_id, DATA_DIR).history()
     if not segs:
         raise HTTPException(404, "no completed captions for this meeting")
+    segs = merge_internal_and_remote(segs)
     llm_error = None
     try:
         # 10 min: on a GPU shared with live recognition a long meeting took over the old 5 min (measured)
@@ -581,41 +583,66 @@ async def _finalize(meeting_id: str, project_id: int | None = None, attendees: l
     meta = _calendar_meta.get(meeting_id, {})
     target_project = project_id if project_id is not None else meta.get("project_id")
     target_attendees = attendees if attendees is not None else meta.get("attendees")
+    if publish:
+        odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR,
+                                       project_id=target_project, attendees=target_attendees)
+        if EXPORT_DIR is not None:
+            try:
+                EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+                (EXPORT_DIR / f"{meeting_id}.minutes.md").write_text(markdown, encoding="utf-8")
+            except OSError as e:
+                log.warning("export write failed: %s", e)
+    else:
+        md_path = DATA_DIR / f"{meeting_id}.minutes.md"
+        md_path.parent.mkdir(parents=True, exist_ok=True)
+        md_path.write_text(markdown, encoding="utf-8")
+        odoo = {"status": "draft", "path": str(md_path)}
+    (DATA_DIR / f"{meeting_id}.finalize.json").write_text(
+        json.dumps({"finalized_at": time.time(), "llm": llm, "llm_model": S.get("ollama_model"), "llm_error": llm_error,
+                    "odoo": odoo}), encoding="utf-8")
+    if publish and meeting_id in rooms:
+        await rooms[meeting_id].broadcast({"type": "finalized", "meeting_id": meeting_id, "llm": llm,
+                                           "odoo_status": odoo["status"]})
+    return {"meeting_id": meeting_id, "markdown": markdown, "segments": segs, "llm": llm, "llm_error": llm_error,
+            "saved_to": odoo["path"], "odoo": odoo}
+
+
+@app.post("/api/meetings/{meeting_id}/publish")
+async def publish_meeting(meeting_id: str, request: Request) -> dict:
+    """Publish already-generated (or user-edited) minutes to Odoo without re-running Ollama."""
+    _valid_id(meeting_id)
+    raw = await request.body()
+    opts = json.loads(raw) if raw.strip() else {}
+    md_path = DATA_DIR / f"{meeting_id}.minutes.md"
+    if opts.get("markdown"):
+        markdown = str(opts["markdown"])
+        md_path.parent.mkdir(parents=True, exist_ok=True)
+        md_path.write_text(markdown, encoding="utf-8")
+    elif md_path.exists():
+        markdown = md_path.read_text(encoding="utf-8")
+    else:
+        raise HTTPException(404, "meeting has no generated minutes yet")
+    if isinstance(opts.get("segments"), list):
+        jsonl = DATA_DIR / f"{meeting_id}.jsonl"
+        jsonl.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in opts["segments"]), encoding="utf-8")
+    segs = MeetingRoom(meeting_id, DATA_DIR).history()
+    participants = sorted({s["speaker"] for s in segs})
+    meta = _calendar_meta.get(meeting_id, {})
     odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR,
-                                   project_id=target_project, attendees=target_attendees)
+                                   project_id=meta.get("project_id"), attendees=meta.get("attendees"))
     if EXPORT_DIR is not None:
         try:
             EXPORT_DIR.mkdir(parents=True, exist_ok=True)
             (EXPORT_DIR / f"{meeting_id}.minutes.md").write_text(markdown, encoding="utf-8")
         except OSError as e:
             log.warning("export write failed: %s", e)
-    (DATA_DIR / f"{meeting_id}.finalize.json").write_text(
-        json.dumps({"finalized_at": time.time(), "llm": llm, "llm_model": S.get("ollama_model"), "llm_error": llm_error,
-                    "odoo": odoo}), encoding="utf-8")
-    if meeting_id in rooms:
-        await rooms[meeting_id].broadcast({"type": "finalized", "meeting_id": meeting_id, "llm": llm,
-                                           "odoo_status": odoo["status"]})
-    return {"meeting_id": meeting_id, "markdown": markdown, "llm": llm, "llm_error": llm_error,
-            "saved_to": odoo["path"], "odoo": odoo}
-
-
-@app.post("/api/meetings/{meeting_id}/publish")
-async def publish_meeting(meeting_id: str) -> dict:
-    """Publish already-generated minutes to Odoo without re-running Ollama."""
-    _valid_id(meeting_id)
-    md_path = DATA_DIR / f"{meeting_id}.minutes.md"
-    if not md_path.exists():
-        raise HTTPException(404, "meeting has no generated minutes yet")
-    markdown = md_path.read_text(encoding="utf-8")
-    segs = MeetingRoom(meeting_id, DATA_DIR).history()
-    participants = sorted({s["speaker"] for s in segs})
-    meta = _calendar_meta.get(meeting_id, {})
-    odoo = await asyncio.to_thread(odoo_client().publish_or_save, meeting_id, markdown, participants, DATA_DIR,
-                                   project_id=meta.get("project_id"), attendees=meta.get("attendees"))
     info_path = DATA_DIR / f"{meeting_id}.finalize.json"
     rec = json.loads(info_path.read_text(encoding="utf-8")) if info_path.exists() else {}
     rec.update(odoo=odoo)
     info_path.write_text(json.dumps(rec), encoding="utf-8")
+    if meeting_id in rooms:
+        await rooms[meeting_id].broadcast({"type": "finalized", "meeting_id": meeting_id,
+                                           "llm": rec.get("llm", True), "odoo_status": odoo["status"]})
     return {"meeting_id": meeting_id, "odoo": odoo}
 
 

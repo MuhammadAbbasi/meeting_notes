@@ -71,22 +71,44 @@ def match_odoo_user(server_ip: str, port: int, name: str, email: str, timeout: f
 
 
 def finalize(server_ip: str, port: int, meeting_id: str, project_id: int | None = None,
-             attendees: list[str] | None = None, language: str | None = None, timeout: float = 600) -> dict:
+             attendees: list[str] | None = None, language: str | None = None,
+             publish: bool = True, timeout: float = 600) -> dict:
     """POST /finalize; blocking (Ollama can take minutes). Returns the hub's JSON or {"error": str}."""
     import urllib.error
     import urllib.request
 
-    payload = {}
+    payload: dict = {"publish": publish}
     if project_id is not None:
         payload["project_id"] = project_id
     if attendees is not None:
         payload["attendees"] = attendees
     if language:
         payload["language"] = language
-    body = json.dumps(payload).encode("utf-8") if payload else b""
-    headers = {"Content-Type": "application/json"} if payload else {}
+    body = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
     req = urllib.request.Request(f"http://{server_ip}:{port}/api/meetings/{meeting_id}/finalize",
                                  data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        return {"error": f"HTTP {e.code}: {e.read().decode(errors='replace')[:200]}"}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+def publish_draft(server_ip: str, port: int, meeting_id: str, markdown: str,
+                  segments: list[dict] | None = None, timeout: float = 120) -> dict:
+    """POST /publish with user-reviewed markdown/segments."""
+    import urllib.error
+    import urllib.request
+
+    payload: dict = {"markdown": markdown}
+    if segments is not None:
+        payload["segments"] = segments
+    req = urllib.request.Request(f"http://{server_ip}:{port}/api/meetings/{meeting_id}/publish",
+                                 data=json.dumps(payload).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.load(r)

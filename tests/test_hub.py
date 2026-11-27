@@ -628,3 +628,24 @@ def test_finalize_uses_retranscribed_audio_when_available(client, monkeypatch):
     monkeypatch.setattr(client.hub, "synthesize", fake_synth)
     assert client.post("/api/meetings/daily/finalize").status_code == 200
     assert seen["segs"] == accurate
+
+
+def test_finalize_draft_then_publish_edited_markdown(client, monkeypatch):
+    (client.tmp / "daily.jsonl").write_text(
+        '{"speaker": "Muhammad", "text": "Controllo pannelli", "start": 0, "end": 2, "ts": 1.0, "rms": 0.1}\n', encoding="utf-8")
+    monkeypatch.setattr(client.hub, "synthesize", lambda segs, mid, url, model, *a: "## Executive Summary\nDraft\n")
+    r = client.post("/api/meetings/daily/finalize", json={"publish": False})
+    assert r.status_code == 200 and r.json()["odoo"]["status"] == "draft"
+    assert r.json()["markdown"] == "## Executive Summary\nDraft\n"
+
+    seen = {}
+
+    class FakeOdoo:
+        def publish_or_save(self, meeting_id, markdown, participants, out_dir, project_id=None, attendees=None):
+            seen["md"] = markdown
+            return {"status": "published", "parent_task_id": 99, "path": str(out_dir / f"{meeting_id}.minutes.md")}
+
+    monkeypatch.setattr(client.hub, "odoo_client", lambda **kw: FakeOdoo())
+    pub = client.post("/api/meetings/daily/publish", json={"markdown": "## Executive Summary\nEdited\n"})
+    assert pub.status_code == 200 and pub.json()["odoo"]["status"] == "published"
+    assert seen["md"] == "## Executive Summary\nEdited\n"

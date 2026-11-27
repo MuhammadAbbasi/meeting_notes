@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from audio_capture import LoopbackCapture, MicCapture
-from hub_link import HubLink, fetch_calendar, finalize, friendly_state, speaker_url
+from hub_link import HubLink, fetch_calendar, finalize, friendly_state, publish_draft, speaker_url
 from overlay_ui import CaptionOverlay
-from setup_dialog import ask_config, ask_end_meeting, ask_meeting, ask_start_scheduled
+from setup_dialog import ask_config, ask_end_meeting, ask_meeting, ask_review_draft, ask_start_scheduled
 from tray import Tray
 
 HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))  # bundled resources when frozen
@@ -49,13 +49,15 @@ class Agent:
     def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
         self.audio = MicCapture(device=None)
-        self.loop_audio = LoopbackCapture() if cfg.get("capture_system_audio") else None
-        self.overlay = CaptionOverlay(on_pause=self.set_paused, on_finalize=lambda: self.prompt_end_meeting("manual"),
+        self.loop_audio = LoopbackCapture() if cfg.get("capture_system_audio", True) else None
+        self.overlay = CaptionOverlay(on_pause=self.set_paused, on_mute_mic=self.set_mic_paused,
+                                      on_finalize=lambda: self.prompt_end_meeting("manual"),
                                       alpha=cfg.get("overlay_alpha", 0.5))
         self.tray = Tray(self)
         self.link: HubLink | None = None
         self.loop_link: HubLink | None = None
         self.paused = False
+        self.mic_paused = False
         self._meeting_meta: dict = {}
         self._last_activity = time.monotonic()
         self._had_others = False
@@ -158,45 +160,72 @@ class Agent:
         self.stop() if self.running else self.start()
 
     def set_paused(self, paused: bool) -> None:
+        """Pause or resume the entire meeting (both local microphone and remote call audio)."""
         self.paused = paused
+        self.mic_paused = paused
         self.audio.muted = paused
         if self.loop_audio is not None:
             self.loop_audio.muted = paused
-        self.overlay.call(lambda: self.overlay.set_paused(paused))
+        self.overlay.call(lambda: (self.overlay.set_paused(paused), self.overlay.set_mic_paused(paused)))
         if self.running:
-            self._on_state("connected")  # strip and tray switch between "Live" and "Paused"
-        if self.running:
+            self._on_state("connected")
             self.tray.set_state("paused" if paused else "connected")
 
+    def set_mic_paused(self, paused: bool) -> None:
+        """Mute or unmute only the local microphone while still captioning remote call participants."""
+        self.mic_paused = paused
+        self.audio.muted = paused
+        self.overlay.call(lambda: self.overlay.set_mic_paused(paused))
+        if self.running:
+            self.tray.set_state("paused" if (self.paused or self.mic_paused) else "connected")
+
     def finalize(self, quit_after: bool = False) -> None:
-        """Stop streaming, flush audio, and ask the hub for minutes + Odoo push."""
+        """Stop streaming, generate draft notes, let user review/edit (auto-publish in 60 s), then publish."""
         mid = self.cfg["meeting_id"]
         lang = self.cfg.get("language", "it")
         meta = dict(self._meeting_meta)
         self.stop()
 
         def work():
-            self.overlay.set_status("Writing minutes… this takes one to three minutes")
+            self.overlay.set_status("Writing draft minutes… this takes a moment")
             r = finalize(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), mid,
-                         project_id=meta.get("project_id"),
-                         attendees=meta.get("attendees"),
-                         language=lang)
+                         project_id=meta.get("project_id"), attendees=meta.get("attendees"),
+                         language=lang, publish=False)
             if "error" in r:
                 self.overlay.set_status(f"Couldn't write the minutes: {r['error']}")
-            else:
+                if quit_after:
+                    self.quit()
+                return
+
+            def review():
+                send, edited_md, edited_caps = ask_review_draft(
+                    self.overlay.root, mid, r["markdown"], r.get("segments") or [], auto_send_s=60)
                 try:
                     notes_dir = Path(self.cfg.get("notes_dir", "C:/a176lab_meetings"))
                     notes_dir.mkdir(parents=True, exist_ok=True)
-                    (notes_dir / f"{mid}.minutes.md").write_text(r["markdown"], encoding="utf-8")
+                    (notes_dir / f"{mid}.minutes.md").write_text(edited_md, encoding="utf-8")
                 except OSError:
                     pass
-                where = "and published to Odoo" if r["odoo"]["status"] == "published" else "and saved on the hub"
-                self.overlay.set_status(f"Minutes written {where}" if r["llm"]
-                                        else "Only the transcript was saved: the minutes writer isn't available")
-                if not quit_after:
-                    self.overlay.show_notes_link(f"{self._base_http()}/dashboard#meeting/{mid}")
-            if quit_after:
-                self.quit()
+                if not send:
+                    self.overlay.set_status("Draft saved locally (not published to Odoo)")
+                    if quit_after:
+                        self.quit()
+                    return
+
+                def do_publish():
+                    self.overlay.set_status("Publishing to Odoo…")
+                    pub = publish_draft(self.cfg["server_ip"], self.cfg.get("hub_port", 8085), mid, edited_md)
+                    if "error" in pub:
+                        self.overlay.set_status(f"Odoo publish failed: {pub['error']}")
+                    else:
+                        where = "and published to Odoo" if pub["odoo"]["status"] == "published" else "and saved on the hub"
+                        self.overlay.set_status(f"Minutes written {where}")
+                        if not quit_after:
+                            self.overlay.show_notes_link(f"{self._base_http()}/dashboard#meeting/{mid}")
+                    if quit_after:
+                        self.quit()
+                threading.Thread(target=do_publish, daemon=True).start()
+            self.overlay.call(review)
         threading.Thread(target=work, daemon=True).start()
 
     def prompt_end_meeting(self, reason: str = "manual", quit_after: bool = False) -> None:

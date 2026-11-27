@@ -13,8 +13,9 @@ FONT = ("Segoe UI", 11)
 
 class CaptionOverlay:
     def __init__(self, on_pause: Callable[[bool], None], on_hide: Callable[[], None] | None = None,
-                 on_finalize: Callable[[], None] | None = None, lines: int = 3, alpha: float = 0.5) -> None:
-        self.on_pause, self.on_hide, self.on_finalize, self.lines = on_pause, on_hide, on_finalize, lines
+                 on_finalize: Callable[[], None] | None = None, on_mute_mic: Callable[[bool], None] | None = None,
+                 lines: int = 3, alpha: float = 0.5) -> None:
+        self.on_pause, self.on_mute_mic, self.on_hide, self.on_finalize, self.lines = on_pause, on_mute_mic, on_hide, on_finalize, lines
         self._q: queue.Queue = queue.Queue()
         self._done: list[dict] = []
         self._partials: dict[str, dict] = {}
@@ -37,8 +38,10 @@ class CaptionOverlay:
         self._notes_url: str | None = None
         self.hide_btn = tk.Button(bar, text="Hide", command=self.hide, **self._btn())
         self.hide_btn.pack(side="right")
-        self.pause_btn = tk.Button(bar, text="Pause", command=self._toggle_pause, **self._btn())
+        self.pause_btn = tk.Button(bar, text="Pause all", command=self._toggle_pause, **self._btn())
         self.pause_btn.pack(side="right", padx=4)
+        self.mic_btn = tk.Button(bar, text="Mute mic", command=self._toggle_mic, **self._btn())
+        self.mic_btn.pack(side="right", padx=4)
         self.end_btn = None
         if on_finalize:
             end_style = {**self._btn(), "fg": "#F2B8B5", "activebackground": ERROR_BG, "activeforeground": "#F9DEDC"}
@@ -55,6 +58,7 @@ class CaptionOverlay:
         self.text.bind("<ButtonPress-1>", self._drag_start)
         self.text.bind("<B1-Motion>", self._drag_move)
         self._paused = False
+        self._mic_paused = False
         root.after(100, self._drain)
 
     @staticmethod
@@ -91,18 +95,25 @@ class CaptionOverlay:
 
     def set_paused(self, paused: bool) -> None:
         self._paused = paused
-        self.pause_btn.configure(text="Resume" if paused else "Pause", bg=ERROR_BG if paused else BG,
+        self.pause_btn.configure(text="Resume all" if paused else "Pause all", bg=ERROR_BG if paused else BG,
                                  fg="#F9DEDC" if paused else ACCENT)
+
+    def set_mic_paused(self, paused: bool) -> None:
+        self._mic_paused = paused
+        self.mic_btn.configure(text="Unmute mic" if paused else "Mute mic", bg=ERROR_BG if paused else BG,
+                               fg="#F9DEDC" if paused else ACCENT)
 
     def set_running(self, running: bool) -> None:
         def apply():
             if running:
                 self.notes_btn.pack_forget()
                 self.pause_btn.pack(side="right", padx=4, before=self.hide_btn)
+                self.mic_btn.pack(side="right", padx=4, before=self.pause_btn)
                 if self.end_btn is not None:
-                    self.end_btn.pack(side="right", padx=4, before=self.pause_btn)
+                    self.end_btn.pack(side="right", padx=4, before=self.mic_btn)
             else:
                 self.pause_btn.pack_forget()
+                self.mic_btn.pack_forget()
                 if self.end_btn is not None:
                     self.end_btn.pack_forget()
         self.call(apply)
@@ -118,6 +129,10 @@ class CaptionOverlay:
 
     def _toggle_pause(self) -> None:
         self.on_pause(not self._paused)
+
+    def _toggle_mic(self) -> None:
+        if self.on_mute_mic:
+            self.on_mute_mic(not self._mic_paused)
 
     def _drag_start(self, e) -> None:
         self._dx, self._dy = e.x_root - self.root.winfo_x(), e.y_root - self.root.winfo_y()

@@ -62,17 +62,19 @@ sends nothing.
 - `GET /api/meetings/{meeting_id}/segments` → JSON list of persisted completed segments,
   each `{"speaker","text","start","end","ts","rms"}` in file order.
 - `POST /api/meetings/{meeting_id}/finalize` → optional JSON body
-  `{"project_id"?:int|null,"attendees"?:[str,...]}`. Waits for in-flight hold-window captions
-  to settle before reading segments. Returns 404 if no segments, else
-  `{"meeting_id":str,"markdown":str,"llm":bool,"saved_to":str,"odoo":{"status":"published"|"saved_locally",...}}`.
+  `{"project_id"?:int|null,"attendees"?:[str,...],"language"?:str,"publish"?:bool}`.
+  When `publish` is `false`, writes `{meeting_id}.minutes.md` as a draft without pushing to Odoo.
+  Waits for in-flight hold-window captions to settle before reading segments. Returns 404 if no segments, else
+  `{"meeting_id":str,"markdown":str,"segments":[...],"llm":bool,"saved_to":str,"odoo":{"status":"published"|"saved_locally"|"draft",...}}`.
   `llm:false` means Ollama was unreachable and `markdown` is the plain transcript. Minutes are
   always written to `data/meetings/{meeting_id}.minutes.md`, and the outcome to
   `data/meetings/{meeting_id}.finalize.json` (`{"finalized_at":float,"llm":bool,"llm_model":str,
   "llm_error":str|null,"odoo":{...}}`). One run per meeting at a time: a request that arrives while
   a run is going waits for it and returns the same result with `"joined": true`.
-- `POST /api/meetings/{meeting_id}/publish` → 404 if `{meeting_id}.minutes.md` does not exist;
-  publishes the already-saved Markdown to Odoo (updating `{meeting_id}.finalize.json`) without
-  re-running Ollama, returning `{"meeting_id":str,"odoo":{"status":"published"|"saved_locally",...}}`.
+- `POST /api/meetings/{meeting_id}/publish` → optional JSON body `{"markdown"?:str,"segments"?:[...]}`.
+  404 if `{meeting_id}.minutes.md` does not exist and no `markdown` is provided; saves any edited
+  markdown/segments and publishes to Odoo (updating `{meeting_id}.finalize.json` and `EXPORT_DIR`)
+  without re-running Ollama, returning `{"meeting_id":str,"odoo":{"status":"published"|"saved_locally",...}}`.
 - `GET /api/calendar` → `{"meetings":[{"meeting_id":str,"title":str,"start":str|null,
   "stop":str|null,"project_id":int|null,"project_name":str|null,"attendees":[str,...],
   "live_speakers":[str,...]}]}`. Lists today's/upcoming Odoo `calendar.event` entries (when

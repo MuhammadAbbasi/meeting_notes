@@ -78,7 +78,7 @@ class OdooMeetingClient:
     def resolve_speaker_to_user_id(self, speaker_name: str, min_similarity: float = 0.78,
                                    preferred_names: list[str] | None = None) -> int | None:
         cleaned = re.sub(r"[\[\]\*`]", "", speaker_name).strip()  # keep "@": labels may be logins
-        if cleaned.lower() in UNASSIGNED:
+        if cleaned.lower() in UNASSIGNED or re.fullmatch(r"remote-\d+", cleaned.lower()):
             return None
         users = self.fetch_active_users()
         target = self.speaker_aliases.get(cleaned.lower(), cleaned).lower()

@@ -106,7 +106,7 @@ def ask_config(defaults: dict) -> dict | None:
 
     calls = tk.Frame(body, bg=BG)
     calls.pack(fill="x", pady=(16, 0))
-    loop_var = tk.BooleanVar(value=bool(defaults.get("capture_system_audio", False)))
+    loop_var = tk.BooleanVar(value=bool(defaults.get("capture_system_audio", True)))
     tk.Checkbutton(calls, text="Also caption the other side of calls", variable=loop_var, bg=BG, fg=INK,
                    activebackground=BG, selectcolor=BG, font=(FONT, 10, "bold"), anchor="w").pack(fill="x")
     _label(calls, "Turn this on if you join Teams, Zoom or Meet calls from this computer. What the computer plays "
@@ -269,6 +269,66 @@ def ask_start_scheduled(parent: tk.Misc, title: str) -> bool:
     win.grab_set()
     parent.wait_window(win)
     return out["start"]
+
+
+def ask_review_draft(parent: tk.Misc, meeting_id: str, markdown: str,
+                     segments: list[dict], auto_send_s: int = 60) -> tuple[bool, str, str]:
+    """Show draft notes + captions for review/edit; auto-publishes after `auto_send_s` unless edited or cancelled."""
+    win = tk.Toplevel(parent)
+    win.title(f"Review draft notes – {meeting_id}")
+    win.configure(bg=BG, padx=24, pady=18)
+    win.geometry("760x620")
+    win.attributes("-topmost", True)
+    set_window_icon(win)
+
+    _label(win, f"Review draft notes ({meeting_id})", 14, bold=True)
+    timer_lbl = _label(win, f"Publishing to Odoo automatically in {auto_send_s} s (edit to pause timer)…", 10, BLUE, pady=(2, 8))
+
+    _label(win, "Draft Meeting Notes (Markdown)", 10, bold=True, pady=(4, 2))
+    notes_txt = tk.Text(win, height=13, font=("Consolas", 10), bg="#F8FAFD", fg=INK, relief="solid", bd=1, wrap="word")
+    notes_txt.insert("1.0", markdown)
+    notes_txt.pack(fill="both", expand=True)
+
+    _label(win, "Draft Captions (Transcript)", 10, bold=True, pady=(10, 2))
+    caps_txt = tk.Text(win, height=9, font=(FONT, 9), bg="#F8FAFD", fg=INK, relief="solid", bd=1, wrap="word")
+    caps_txt.insert("1.0", "\n".join(f"[{s['speaker']}] {s['text']}" for s in segments))
+    caps_txt.pack(fill="both", expand=True)
+
+    state = {"send": False, "left": auto_send_s, "paused": False}
+
+    def pause_timer(_=None):
+        if not state["paused"]:
+            state["paused"] = True
+            timer_lbl.configure(text="Auto-publish paused while editing. Click 'Publish to Odoo now' when ready.", fg=MUTED)
+
+    notes_txt.bind("<Key>", pause_timer)
+    caps_txt.bind("<Key>", pause_timer)
+
+    def finish(send: bool):
+        state["send"] = send
+        state["md"] = notes_txt.get("1.0", "end").strip() + "\n"
+        state["caps"] = caps_txt.get("1.0", "end").strip()
+        win.destroy()
+
+    def tick():
+        if state["paused"] or not win.winfo_exists():
+            return
+        state["left"] -= 1
+        if state["left"] <= 0:
+            finish(True)
+            return
+        timer_lbl.configure(text=f"Publishing to Odoo automatically in {state['left']} s (type to pause)…")
+        win.after(1000, tick)
+
+    btns = tk.Frame(win, bg=BG)
+    btns.pack(fill="x", pady=(12, 0))
+    _button(btns, "Publish to Odoo now", lambda: finish(True), True).pack(side="right")
+    _button(btns, "Keep local draft only", lambda: finish(False), False).pack(side="right", padx=(0, 8))
+    win.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+    win.after(1000, tick)
+    win.grab_set()
+    parent.wait_window(win)
+    return state["send"], state.get("md", markdown), state.get("caps", "")
 
 
 def ask_end_meeting(parent: tk.Misc, meeting_id: str, reason: str = "manual") -> str:

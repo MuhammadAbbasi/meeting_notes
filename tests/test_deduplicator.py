@@ -89,3 +89,15 @@ def test_room_noise_filter_matches_measured_behaviour():
     assert not is_room_noise("ok", 0.05, 0.005)                   # short but at speech volume: kept
     assert not is_room_noise("il tracker ha perso la comunicazione", 0.012, 0.005)  # real sentence, quiet mic
     assert not is_room_noise("Thank you.", 0.0, 0)                # filter off
+
+
+def test_merge_internal_and_remote_drops_echo_and_numbers_remote():
+    from server.deduplicator import merge_internal_and_remote
+    rows = [
+        {"speaker": "Muhammad Abbasi", "text": "Controlliamo i pannelli del settore B.", "start": 0.0, "end": 3.0, "ts": 100.0},
+        {"speaker": "Remote-Call", "text": "controlliamo i pannelli del settore b", "start": 0.2, "end": 3.2, "ts": 100.5},
+        {"speaker": "Remote-Call", "text": "Va bene, quando arrivano i tecnici?", "start": 5.0, "end": 8.0, "ts": 105.0},
+        {"speaker": "Remote-Call", "text": "Possiamo mercoledì mattina alle otto.", "start": 15.0, "end": 18.0, "ts": 115.0},
+    ]
+    merged = merge_internal_and_remote(rows)
+    assert [r["speaker"] for r in merged] == ["Muhammad Abbasi", "Remote-1", "Remote-2"]
