@@ -141,7 +141,8 @@ async def root() -> HTMLResponse:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "version": HUB_VERSION, "transcriber": S.get("transcriber"), "rooms": len(rooms),
+    return {"status": "ok", "version": HUB_VERSION, "transcriber": S.get("transcriber"),
+            "rooms": sum(1 for r in rooms.values() if r.speakers or r.listeners),
             "speakers": sum(len(r.speakers) for r in rooms.values()),
             "listeners": sum(len(r.listeners) for r in rooms.values())}
 
@@ -233,7 +234,7 @@ async def settings() -> dict:
             "odoo_reachable": odoo_ok,
             "data_dir": str(DATA_DIR.resolve()),
             "meetings": sum(1 for p in DATA_DIR.glob("*.jsonl") if MEETING_ID_RE.fullmatch(p.stem)),
-            "live_rooms": {mid: sorted(r.speakers) for mid, r in rooms.items()},
+            "live_rooms": {mid: sorted(r.speakers) for mid, r in rooms.items() if r.speakers},
             "connected_clients": connected_clients,
             "agent": _agent_info(),
         },
@@ -818,12 +819,18 @@ async def speak(ws: WebSocket, meeting_id: str, speaker: str, lang: str = "auto"
             committer.cancel()
         if recorder is not None:
             recorder.close()
-        if transcriber is not None:
-            await transcriber.close()
+        try:
+            if transcriber is not None:
+                await transcriber.close()
+        except Exception:
+            pass
         commit_pending()  # the last sentence of someone who leaves is kept, not lost
         room.remove_speaker(speaker, ws)
         if room.clocks.get(speaker) is clock:
             room.clocks.pop(speaker, None)
-        await _close(ws)
-        await room.broadcast(room.roster())
+        try:
+            await _close(ws)
+            await room.broadcast(room.roster())
+        except Exception:
+            pass
         _drop_if_empty(room)
