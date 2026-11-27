@@ -332,6 +332,8 @@ dialog .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2
         <div><h1 class="headline" id="hero-title">Verifica del server…</h1><p id="hero-sub"></p></div></div>
       <div class="svc-grid" id="services"></div>
       <div id="issues"></div>
+      <h2 class="section">Account e PC connessi</h2>
+      <ul class="list" id="connected-clients"></ul>
       <h2 class="section">Riunioni recenti</h2>
       <ul class="list" id="recent"></ul>
       <div class="row"><a class="btn text" href="#meetings">Vedi tutte le riunioni</a></div>
@@ -668,6 +670,17 @@ function renderOverview() {
   ].join("");
   const box = $("#issues"); box.replaceChildren();
   if (issues.length) { const h = document.createElement("h2"); h.className = "section"; h.textContent = "Richiede attenzione"; box.append(h, ...issues.map(banner)); }
+  const clients = s.connected_clients || [];
+  $("#connected-clients").innerHTML = clients.length
+    ? clients.map(c => {
+        const isSpk = c.role === "speaker";
+        const label = isSpk ? c.name : "Visualizzatore browser";
+        const sub = [`Riunione: ${c.meeting_id}`, c.ip ? `IP: ${c.ip}` : ""].filter(Boolean).join(" · ");
+        return `<li>${isSpk ? avatar(c.name) : `<span class="avatar">${icon("computer")}</span>`}
+          <div class="body"><div class="head-l">${esc(label)}</div><div class="sup">${esc(sub)}</div></div>
+          <span class="chip ${isSpk ? "ok" : "info"}">${icon(isSpk ? "mic" : "open")}${isSpk ? "In diretta" : "In ascolto"}</span></li>`;
+      }).join("")
+    : `<li class="empty">${icon("computer")}<b>Nessun account o PC connesso</b>Quando un utente avvia l'agente o apre i sottotitoli in diretta apparirà qui.</li>`;
   const badge = $("#nav-badge"); badge.hidden = !(errs + warns); badge.textContent = errs + warns;
 }
 

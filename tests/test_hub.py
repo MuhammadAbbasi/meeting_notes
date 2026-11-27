@@ -246,6 +246,18 @@ def test_settings_masks_secrets_and_reports_reachability(monkeypatch, tmp_path):
         assert st["meetings"] == 0 and st["live_rooms"] == {} and st["agent"] is None
 
 
+def test_settings_reports_connected_clients(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as c:
+        with c.websocket_connect("/ws/daily/Muhammad") as ws_spk:
+            ws_spk.receive_json()  # initial roster
+            with c.websocket_connect("/listen/daily") as ws_lst:
+                ws_lst.receive_json()  # initial roster
+                st = c.get("/api/settings", auth=AUTH).json()["status"]
+                clients = st["connected_clients"]
+                assert any(x["role"] == "speaker" and x["name"] == "Muhammad" and x["meeting_id"] == "daily" and "ip" in x for x in clients)
+                assert any(x["role"] == "listener" and x["meeting_id"] == "daily" and "ip" in x for x in clients)
+
+
 def test_update_settings_applies_live_and_persists(client, monkeypatch):
     restarted = []
     monkeypatch.setattr(client.hub, "restart_container", lambda name: restarted.append(name))

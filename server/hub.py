@@ -197,6 +197,11 @@ def _agent_info() -> dict | None:
     return {"name": EXE_NAME, "size": st.st_size, "modified": st.st_mtime, "sha256": _sha_cache["sha256"]}
 
 
+def _ws_ip(ws: WebSocket) -> str:
+    c = getattr(ws, "client", None)
+    return getattr(c, "host", "") or ""
+
+
 @app.get("/api/settings", dependencies=[Depends(admin)])
 async def settings() -> dict:
     """Editable values (secrets masked) plus live reachability of each dependency."""
@@ -206,6 +211,15 @@ async def settings() -> dict:
         _reachable(odoo.url) if odoo.url else asyncio.sleep(0, False),
         asyncio.to_thread(_ollama_models, S.get("ollama_url")))
     model = S.get("ollama_model")
+    connected_clients = [
+        {"meeting_id": mid, "role": "speaker", "name": name, "ip": _ws_ip(ws)}
+        for mid, r in sorted(rooms.items())
+        for name, ws in sorted(r.speakers.items())
+    ] + [
+        {"meeting_id": mid, "role": "listener", "name": "", "ip": _ws_ip(ws)}
+        for mid, r in sorted(rooms.items())
+        for ws in r.listeners
+    ]
     return {
         "values": S.public(),
         "version": S.version,
@@ -220,6 +234,7 @@ async def settings() -> dict:
             "data_dir": str(DATA_DIR.resolve()),
             "meetings": sum(1 for p in DATA_DIR.glob("*.jsonl") if MEETING_ID_RE.fullmatch(p.stem)),
             "live_rooms": {mid: sorted(r.speakers) for mid, r in rooms.items()},
+            "connected_clients": connected_clients,
             "agent": _agent_info(),
         },
     }

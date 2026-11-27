@@ -89,7 +89,7 @@ sends nothing.
     dedup_hold_s, dedup_window_s, dedup_similarity, noise_floor_rms, default_meeting, default_language`.
     Secrets are returned as booleans (set / not set). `status`: `transcriber_reachable,
     llm_reachable, llm_models[], llm_model_pulled, odoo_configured, odoo_reachable, data_dir,
-    meetings, live_rooms{id:[speakers]}, agent{name,size,modified}|null`. Reachability is a 2 s
+    meetings, live_rooms{id:[speakers]}, connected_clients[{"meeting_id","role","name","ip"}], agent{name,size,modified}|null`. Reachability is a 2 s
     TCP connect (Ollama: `GET /api/tags`); for `transcriber=mock` it is `true`.
   - `PUT /api/settings` body `{<key>:<value>,..., "_version"?:int}` → `{"changed":[keys],"values":{...},"version":int,"notes":[str]}`;
     unknown keys ignored, invalid values → 400 and nothing is applied (all-or-nothing), a secret
