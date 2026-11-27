@@ -121,10 +121,10 @@ def clean_response(text: str) -> str:
 
 def render_minutes_json(data: dict) -> str:
     """Render deterministic Markdown from structured Ollama JSON output."""
-    summary = (data.get("executive_summary") or "").strip() or "No summary."
+    summary = re.sub(r"^#+\s*Executive Summary\s*", "", (data.get("executive_summary") or "").strip(), flags=re.IGNORECASE).strip() or "No summary."
     topics = []
     for t in data.get("topics") or []:
-        title = str(t.get("topic") or "Discussion").strip()
+        title = re.sub(r"^#+\s*", "", str(t.get("topic") or "Discussion").strip()).strip()
         body = str(t.get("summary") or "").strip()
         sp = ", ".join(str(s).strip() for s in (t.get("speakers") or []) if str(s).strip())
         kps = [f"  - {str(kp).strip()}" for kp in (t.get("key_points") or []) if str(kp).strip()]

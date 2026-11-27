@@ -337,7 +337,7 @@ async def calendar() -> dict:
         room = rooms.get(mid)
         out.append({**ev, "live_speakers": sorted(room.speakers) if room else []})
     for mid, room in sorted(rooms.items()):
-        if mid not in seen:
+        if mid not in seen and room.speakers:
             out.append({"meeting_id": mid, "title": mid, "start": None, "stop": None,
                         "project_id": None, "project_name": None, "attendees": [],
                         "live_speakers": sorted(room.speakers)})
@@ -478,7 +478,8 @@ def _meeting_summary(path: Path) -> dict:
                    "started": min(ts, default=None), "ended": max(ts, default=None), "minutes": minutes}
         _summary_cache[mid] = (key, summary)
     lock = _finalizing.get(mid)
-    return {**summary, "live": mid in rooms, "finalizing": bool(lock and lock.locked())}
+    room = rooms.get(mid)
+    return {**summary, "live": bool(room and room.speakers), "finalizing": bool(lock and lock.locked())}
 
 
 @app.get("/api/meetings")
