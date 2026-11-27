@@ -25,8 +25,10 @@ class Tray:
         self.agent = agent
         a = agent
         menu = pystray.Menu(
+            pystray.MenuItem(lambda i: "Switch meeting…" if a.running else "Start / Create meeting…",
+                             lambda: a.change_meeting(), default=True),
             pystray.MenuItem(lambda i: "Hide captions" if a.overlay.visible else "Show captions",
-                             lambda: a.toggle_overlay(), default=True),
+                             lambda: a.toggle_overlay()),
             pystray.MenuItem(lambda i: "Stop streaming" if a.running else "Start streaming",
                              lambda: a.toggle_running()),
             pystray.MenuItem(lambda i: "Resume" if a.paused else "Pause (send silence)",
@@ -34,7 +36,6 @@ class Tray:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("End meeting & write notes…", lambda: a.prompt_end_meeting("manual"),
                              enabled=lambda i: a.running),
-            pystray.MenuItem("Change meeting…", lambda: a.change_meeting()),
             pystray.MenuItem("Open live captions", lambda: a.open_url("captions")),
             pystray.MenuItem("Open dashboard", lambda: a.open_url("dashboard")),
             pystray.MenuItem(lambda i: f"Meeting: {a.cfg['meeting_id']} · {a.cfg['user_name']}", None, enabled=False),

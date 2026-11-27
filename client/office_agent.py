@@ -16,7 +16,7 @@ from pathlib import Path
 from audio_capture import LoopbackCapture, MicCapture
 from hub_link import HubLink, fetch_calendar, finalize, friendly_state, speaker_url
 from overlay_ui import CaptionOverlay
-from setup_dialog import ask_config, ask_end_meeting, ask_meeting
+from setup_dialog import ask_config, ask_end_meeting, ask_meeting, ask_start_scheduled
 from tray import Tray
 
 HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))  # bundled resources when frozen
@@ -34,7 +34,7 @@ def load_config() -> dict:
     defaults = json.loads((HERE / "config.example.json").read_text(encoding="utf-8"))
     if CONFIG.exists():
         defaults.update(json.loads(CONFIG.read_text(encoding="utf-8")))
-        if defaults.get("user_name"):
+        if defaults.get("user_name") and defaults.get("user_email"):
             return defaults
     cfg = ask_config(defaults)
     if cfg is None:
@@ -48,7 +48,7 @@ class Agent:
 
     def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
-        self.audio = MicCapture(device=cfg.get("input_device"))
+        self.audio = MicCapture(device=None)
         self.loop_audio = LoopbackCapture() if cfg.get("capture_system_audio") else None
         self.overlay = CaptionOverlay(on_pause=self.set_paused, on_finalize=lambda: self.prompt_end_meeting("manual"),
                                       alpha=cfg.get("overlay_alpha", 0.5))
@@ -61,7 +61,9 @@ class Agent:
         self._had_others = False
         self._solo_since: float | None = None
         self._end_prompted = False
+        self._seen_events: set[int] = set()
         self.overlay.root.after(30000, self._watch_end)
+        self.overlay.root.after(10000, self._watch_calendar)
 
     @property
     def running(self) -> bool:
@@ -131,6 +133,7 @@ class Agent:
         self._meeting_meta = {}
         self._refresh_calendar_meta()
         self.overlay.set_running(True)
+        self.overlay.call(self.overlay.show)
         self.audio.start()
         self.link = HubLink(self._url(self.cfg["user_name"]), self.audio, self._on_hub_message, self._on_state)
         threading.Thread(target=self.link.run, daemon=True).start()
@@ -219,7 +222,7 @@ class Agent:
 
             def on_tk():
                 picked = ask_meeting(self.overlay.root, self.cfg["meeting_id"], meetings,
-                                     current_lang=self.cfg.get("language", "it"))
+                                     current_lang=self.cfg.get("language", "it"), allow_same=not self.running)
                 if picked and MEETING_ID_RE.fullmatch(picked[0]):
                     new, lang = picked
                     if self.running:
@@ -237,6 +240,34 @@ class Agent:
             self.overlay.call(on_tk)
         threading.Thread(target=fetch_and_ask, daemon=True).start()
 
+    def _watch_calendar(self) -> None:
+        if not self.running:
+            def check():
+                now = datetime.now(timezone.utc).timestamp()
+                me = self.cfg.get("user_name", "").strip().lower()
+                for m in fetch_calendar(self.cfg["server_ip"], self.cfg.get("hub_port", 8085)):
+                    eid = m.get("event_id")
+                    if not eid or eid in self._seen_events or not (m.get("start") and m.get("stop")):
+                        continue
+                    try:
+                        t0 = datetime.strptime(m["start"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+                        t1 = datetime.strptime(m["stop"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+                    except ValueError:
+                        continue
+                    atts = [a.strip().lower() for a in (m.get("attendees") or [])]
+                    if t0 - 120 <= now <= t1 and (not atts or me in atts):
+                        self._seen_events.add(eid)
+
+                        def ask():
+                            if not self.running and ask_start_scheduled(self.overlay.root, m.get("title") or m["meeting_id"]):
+                                self.cfg["meeting_id"] = m["meeting_id"]
+                                save_config(self.cfg)
+                                self.start()
+                        self.overlay.call(ask)
+                        break
+            threading.Thread(target=check, daemon=True).start()
+        self.overlay.root.after(60000, self._watch_calendar)
+
     def toggle_overlay(self) -> None:
         self.overlay.call(self.overlay.hide if self.overlay.visible else self.overlay.show)
 
@@ -246,7 +277,10 @@ class Agent:
         self.overlay.call(self.overlay.root.destroy)
 
     def run(self) -> None:
-        self.start()
+        self.overlay.root.withdraw()
+        self.overlay.visible = False
+        self.overlay.set_running(False)
+        self.tray.set_state("stopped")
         threading.Thread(target=self.tray.start, daemon=True).start()  # pystray setup takes ~4 s on Windows
         try:
             self.overlay.run()

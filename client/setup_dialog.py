@@ -19,19 +19,6 @@ BLUE, INK, MUTED, LINE, ERROR, BG, HEAD = "#0B57D0", "#1F1F1F", "#444746", "#C4C
 FONT = "Segoe UI"
 
 
-def list_input_devices() -> list[tuple[int | str | None, str]]:
-    """Return [(device_index_or_None, label)] for the microphone dropdown."""
-    out: list[tuple[int | str | None, str]] = [(None, "System default microphone")]
-    try:
-        import sounddevice as sd
-        for idx, dev in enumerate(sd.query_devices()):
-            if dev.get("max_input_channels", 0) > 0:
-                out.append((idx, dev["name"]))
-    except Exception:
-        pass
-    return out
-
-
 def set_window_icon(win: tk.Misc) -> None:
     try:
         win.iconbitmap(default=str(ASSETS / "icon.ico"))
@@ -93,8 +80,9 @@ def ask_config(defaults: dict) -> dict | None:
         return f
 
     name_var, name_entry = _entry(section(
-        "Your name",
-        "Shown next to what you say in the captions."), str(defaults.get("user_name", "")))
+        "Your first and last name",
+        "Enter both first and last name (e.g. Muhammad Abbasi). Shown in captions and matched with Odoo."),
+        str(defaults.get("user_name", "")))
 
     email_var, email_entry = _entry(section(
         "Your company email",
@@ -115,14 +103,6 @@ def ask_config(defaults: dict) -> dict | None:
     code = str(defaults.get("language", "it"))
     lang_var = tk.StringVar(value=next((n for n, c in LANGUAGES if c == code), "Italian"))
     ttk.Combobox(lang_box, textvariable=lang_var, values=names, state="readonly", font=(FONT, 11)).pack(fill="x", pady=(4, 0), ipady=3)
-
-    devices = list_input_devices()
-    dev_labels = [lbl for _, lbl in devices]
-    cur_dev = defaults.get("input_device")
-    cur_dev_lbl = next((lbl for idx, lbl in devices if idx == cur_dev), dev_labels[0])
-    mic_box = section("Microphone", "Pick a headset or desk mic, or leave on system default.")
-    mic_var = tk.StringVar(value=cur_dev_lbl)
-    ttk.Combobox(mic_box, textvariable=mic_var, values=dev_labels, state="readonly", font=(FONT, 11)).pack(fill="x", pady=(4, 0), ipady=3)
 
     calls = tk.Frame(body, bg=BG)
     calls.pack(fill="x", pady=(16, 0))
@@ -159,8 +139,8 @@ def ask_config(defaults: dict) -> dict | None:
 
     def ok(_=None):
         name, email, meeting = name_var.get().strip(), email_var.get().strip(), meeting_var.get().strip()
-        if not SPEAKER_RE.fullmatch(name):
-            error.configure(text="Type your name: letters, digits, spaces, dots, - or _ (up to 40 characters).")
+        if not SPEAKER_RE.fullmatch(name) or len(name.split()) < 2:
+            error.configure(text="Enter both your first and last name (e.g. Muhammad Abbasi).")
             name_entry.focus_set()
             return
         if "@" not in email or "." not in email.split("@", 1)[-1]:
@@ -184,7 +164,7 @@ def ask_config(defaults: dict) -> dict | None:
             error.configure(text=msg)
             email_entry.focus_set()
             return
-        dev_id = next((idx for idx, lbl in devices if lbl == mic_var.get()), None)
+        dev_id = None
         result.update(dict(defaults, user_name=canonical_name, user_email=email, meeting_id=meeting, server_ip=ip,
                            hub_port=port, input_device=dev_id, language=dict(LANGUAGES)[lang_var.get()],
                            capture_system_audio=loop_var.get()))
@@ -215,18 +195,18 @@ def _format_meeting_choice(m: dict) -> str:
 
 
 def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = None,
-                current_lang: str = "it") -> tuple[str, str] | None:
+                current_lang: str = "it", allow_same: bool = False) -> tuple[str, str] | None:
     """Google-styled meeting switcher with Odoo calendar + language; returns (meeting_id, language) or None."""
     win = tk.Toplevel(parent)
-    win.title("Change meeting")
+    win.title("Start or join meeting")
     win.configure(bg=BG, padx=24, pady=18)
     win.resizable(False, False)
     win.attributes("-topmost", True)
     set_window_icon(win)
-    _label(win, "Change meeting", 13, bold=True)
+    _label(win, "Start or join meeting", 13, bold=True)
     _label(win, "Pick a scheduled Odoo meeting or type a meeting name.", 9, MUTED, pady=(2, 6))
     choices = [_format_meeting_choice(m) for m in (meetings or [])]
-    var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d_%H%M") if current == "daily" else current)
+    var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d_%H%M") if current in ("", "daily") or allow_same else current)
     if choices:
         cb = ttk.Combobox(win, textvariable=var, values=choices, font=(FONT, 11))
         cb.pack(fill="x", ipady=4, pady=(4, 0))
@@ -261,7 +241,34 @@ def ask_meeting(parent: tk.Misc, current: str, meetings: list[dict] | None = Non
     parent.wait_window(win)
     v = out.get("v")
     lang = out.get("lang", current_lang)
-    return (v, lang) if v and (v != current or lang != current_lang) else None
+    return (v, lang) if v and (allow_same or v != current or lang != current_lang) else None
+
+
+def ask_start_scheduled(parent: tk.Misc, title: str) -> bool:
+    """Prompt when a scheduled Odoo calendar meeting begins."""
+    win = tk.Toplevel(parent)
+    win.title("Meeting starting")
+    win.configure(bg=BG, padx=24, pady=20)
+    win.resizable(False, False)
+    win.attributes("-topmost", True)
+    set_window_icon(win)
+    _label(win, f"Start captions for “{title}”?", 13, bold=True)
+    _label(win, "This scheduled Odoo meeting is starting now. Do you want to start captioning?", 10, MUTED, pady=(6, 4))
+    out = {"start": False}
+
+    def go(val: bool):
+        out["start"] = val
+        win.destroy()
+
+    btns = tk.Frame(win, bg=BG)
+    btns.pack(fill="x", pady=(14, 0))
+    _button(btns, "Start captions", lambda: go(True), True).pack(side="right")
+    _button(btns, "Not now", lambda: go(False), False).pack(side="right", padx=(0, 8))
+    win.bind("<Return>", lambda e: go(True))
+    win.bind("<Escape>", lambda e: go(False))
+    win.grab_set()
+    parent.wait_window(win)
+    return out["start"]
 
 
 def ask_end_meeting(parent: tk.Misc, meeting_id: str, reason: str = "manual") -> str:

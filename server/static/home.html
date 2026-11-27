@@ -77,14 +77,14 @@ code { font: 13px/18px ui-monospace, "Roboto Mono", Consolas, monospace; backgro
 }
 </style>
 </head>
-<body data-lang="en">
+<body data-lang="it">
 <header class="topbar">
   <div class="brand"><img src="/icon.png" alt="" width="32" height="32" style="border-radius:8px">Meeting Captions</div>
   <span class="chip" id="live-chip">…</span>
   <div class="grow"></div>
   <div class="seg" role="group" aria-label="Language">
-    <button id="btn-en" class="on" onclick="setLang('en')">English</button>
-    <button id="btn-it" onclick="setLang('it')">Italiano</button>
+    <button id="btn-it" class="on" onclick="setLang('it')">Italiano</button>
+    <button id="btn-en" onclick="setLang('en')">English</button>
   </div>
   <a class="btn outlined" href="/dashboard"><span class="en">Admin</span><span class="it">Admin</span></a>
 </header>
@@ -104,8 +104,16 @@ code { font: 13px/18px ui-monospace, "Roboto Mono", Consolas, monospace; backgro
         <a class="btn filled" href="/download/OfficeMeetingAgent.exe"><span class="en">Download Windows App</span><span class="it">Scarica App Windows</span></a>
         <button class="btn tonal" id="copy-ps" type="button"><span class="en">Copy 1-line installer</span><span class="it">Copia comando di installazione</span></button>
       </div>
-      <div class="install-box">
+      <div class="install-box" style="flex-direction:column;align-items:stretch;gap:6px">
+        <div style="font-size:13px;font-weight:500">
+          <span class="it">1. Installa (incolla in PowerShell):</span>
+          <span class="en">1. Install (paste in PowerShell):</span>
+        </div>
         <code id="ps-cmd"></code>
+        <div style="font-size:13px;color:var(--on-var);margin-top:4px">
+          <span class="it">2. Configurazione iniziale: all'avvio inserisci <b>Nome e Cognome</b> e la tua <b>email aziendale</b>. Poi l'app resta in attesa vicino all'orologio finché non inizia o crei una riunione.</span>
+          <span class="en">2. First-time setup: enter your <b>First and Last name</b> and <b>company email</b>. The app then waits in the tray until a meeting starts or you create one.</span>
+        </div>
       </div>
     </div>
   </section>
@@ -131,14 +139,14 @@ code { font: 13px/18px ui-monospace, "Roboto Mono", Consolas, monospace; backgro
         <li>Install and open <b>Meeting Captions</b> from the Start menu.</li>
         <li>Enter <b>Your name</b> and <b>Your company email</b> (matched automatically with Odoo so tasks are assigned to you).</li>
         <li>Keep the automatic date/time meeting name, or pick a scheduled meeting from today's Odoo calendar.</li>
-        <li><b>Italian</b> is the default language (change if needed) and pick your microphone.</li>
+        <li><b>Italian</b> is the default language (change if needed); the app automatically uses your active system microphone and waits in the tray until a meeting starts or you create one.</li>
         <li>Turn on <i>Also caption the other side of calls</i> only if you are on a video call (one PC per room).</li>
       </ol>
       <ol class="it">
         <li>Installa e apri <b>Meeting Captions</b> dal menu Start.</li>
         <li>Inserisci <b>Il tuo nome</b> e <b>La tua email aziendale</b> (abbinata in automatico a Odoo per assegnare i task).</li>
         <li>Lascia il nome automatico con data e ora oppure scegli una riunione dal calendario Odoo di oggi.</li>
-        <li><b>Italiano</b> è la lingua predefinita (cambiala se serve) e scegli il tuo microfono.</li>
+        <li><b>Italiano</b> è la lingua predefinita (cambiala se serve); l'app usa in automatico il microfono di sistema e resta in attesa vicino all'orologio finché non inizia o crei una riunione.</li>
         <li>Attiva <i>Also caption the other side of calls</i> solo in videochiamata (un solo PC per stanza).</li>
       </ol>
     </article>
@@ -199,7 +207,7 @@ function setLang(l) {
   $("#btn-it").classList.toggle("on", l === "it");
 }
 const saved = localStorage.getItem("home-lang");
-if (saved === "it" || (!saved && (navigator.language || "").startsWith("it"))) setLang("it");
+if (saved === "en") setLang("en");
 
 async function loadStatus() {
   try {
